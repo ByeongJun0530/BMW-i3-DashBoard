@@ -450,28 +450,53 @@ with st.sidebar:
 # PAGE 1 : 데이터 현황
 # ════════════════════════════════════════════════════════════════
 if page == "데이터 현황":
+    # ── 선택 트립 데이터 로드 ─────────────────────────────────
+    _sel_feats = None
+    _sel_dist  = None
+    _sel_soc_s = None
+    _sel_soc_e = None
+    if selected_data_trip != "전체" and trip_list:
+        _td_raw = load_trip_raw(selected_data_trip)
+        if not _td_raw.empty:
+            _sel_feats, _sel_dist, _sel_soc_s, _sel_soc_e = compute_trip_features(_td_raw)
+
+    trip_label_d = selected_data_trip.replace('.csv', '') if selected_data_trip != "전체" else None
+
     st.markdown('<div class="bmw-title">BMW i3 · 주행 데이터 현황</div>', unsafe_allow_html=True)
-    st.markdown('<div class="bmw-sub">트립 집계 데이터 탐색 · 변수 분포 · 상관관계</div>',
-                unsafe_allow_html=True)
+    if trip_label_d:
+        st.markdown(f'<div class="bmw-sub">개별 트립 분석 · <span style="color:{BMW_BLUE};font-weight:600">{trip_label_d}</span></div>',
+                    unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="bmw-sub">트립 집계 데이터 탐색 · 변수 분포 · 상관관계</div>',
+                    unsafe_allow_html=True)
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
     # ── 데이터 요약 KPI ───────────────────────────────────────
     k1, k2, k3, k4, k5 = st.columns(5)
-    dist_mean = df['Distance'].mean()          if 'Distance'      in df.columns else 0
-    dist_std  = df['Distance'].std()           if 'Distance'      in df.columns else 0
-    dur_mean  = df['Duration'].mean()          if 'Duration'      in df.columns else 0
-    vel_mean  = df['Velocity_mean'].mean()     if 'Velocity_mean' in df.columns else 0
-    soc_mean  = df['SOC_Consumed'].mean()*100  if 'SOC_Consumed'  in df.columns else 0
-
-    for c_, val, lab in [
-        (k1, f'{len(df)}건',         '총 트립 수'),
-        (k2, f'{dist_mean:.1f} km',  '평균 주행거리'),
-        (k3, f'±{dist_std:.1f} km',  '주행거리 편차'),
-        (k4, f'{vel_mean:.1f} km/h', '평균 속도'),
-        (k5, f'{soc_mean:.1f} %',    '평균 SOC 소모'),
-    ]:
-        c_.markdown(f'<div class="kpi"><div class="v">{val}</div>'
-                   f'<div class="l">{lab}</div></div>', unsafe_allow_html=True)
+    if _sel_feats is not None:
+        for c_, val, lab in [
+            (k1, f'{_sel_feats["Duration"]:.1f} min',       '주행 시간'),
+            (k2, f'{_sel_dist:.1f} km',                      '실제 주행거리'),
+            (k3, f'{_sel_feats["Velocity_mean"]:.1f} km/h', '평균 속도'),
+            (k4, f'{_sel_feats["SOC_Consumed"]*100:.1f} %', 'SOC 소모'),
+            (k5, f'{_sel_soc_s:.0f}% → {_sel_soc_e:.0f}%', 'SoC 범위'),
+        ]:
+            c_.markdown(f'<div class="kpi"><div class="v">{val}</div>'
+                       f'<div class="l">{lab}</div></div>', unsafe_allow_html=True)
+    else:
+        dist_mean = df['Distance'].mean()         if 'Distance'      in df.columns else 0
+        dist_std  = df['Distance'].std()          if 'Distance'      in df.columns else 0
+        vel_mean  = df['Velocity_mean'].mean()    if 'Velocity_mean' in df.columns else 0
+        soc_mean  = df['SOC_Consumed'].mean()*100 if 'SOC_Consumed'  in df.columns else 0
+        for c_, val, lab in [
+            (k1, f'{len(df)}건',         '총 트립 수'),
+            (k2, f'{dist_mean:.1f} km',  '평균 주행거리'),
+            (k3, f'±{dist_std:.1f} km',  '주행거리 편차'),
+            (k4, f'{vel_mean:.1f} km/h', '평균 속도'),
+            (k5, f'{soc_mean:.1f} %',    '평균 SOC 소모'),
+        ]:
+            c_.markdown(f'<div class="kpi"><div class="v">{val}</div>'
+                       f'<div class="l">{lab}</div></div>', unsafe_allow_html=True)
 
     st.markdown('<div style="height:18px"></div>', unsafe_allow_html=True)
 
@@ -506,6 +531,20 @@ if page == "데이터 현황":
                     annotation_text=f'μ={vals.mean():.1f}',
                     annotation_font_color=AMBER, annotation_font_size=9,
                 )
+                if _sel_feats is not None:
+                    if col_name == 'Distance':
+                        trip_val = _sel_dist
+                    elif col_name == 'SOC_Consumed':
+                        trip_val = _sel_feats.get('SOC_Consumed', 0) * 100
+                    else:
+                        trip_val = _sel_feats.get(col_name)
+                    if trip_val is not None:
+                        fig_h.add_vline(
+                            x=float(trip_val), line_color=RED, line_width=2.5,
+                            annotation_text=f'선택 {trip_val:.1f}',
+                            annotation_font_color=RED, annotation_font_size=9,
+                            annotation_position='top right',
+                        )
                 fig_h.update_layout(
                     title={'text': label, 'font': {'color': TXT, 'size': 12}, 'x': 0.03},
                     height=260, paper_bgcolor='rgba(0,0,0,0)',
@@ -524,6 +563,10 @@ if page == "데이터 현황":
                 )
                 t1_cols[idx].plotly_chart(fig_h, use_container_width=True,
                                           config={'displayModeBar': False})
+        if _sel_feats is not None:
+            st.markdown(
+                f'<div class="insight">주황 점선 = 전체 평균 · <span style="color:{RED};font-weight:600">빨간 실선</span> = <strong>{trip_label_d}</strong> 트립 위치</div>',
+                unsafe_allow_html=True)
 
     # ── Tab 2 : 변화량 분포 ────────────────────────────────────
     with tab2:
@@ -549,6 +592,15 @@ if page == "데이터 현황":
                     annotation_text=f'μ={vals.mean():.2f}',
                     annotation_font_color=AMBER, annotation_font_size=9,
                 )
+                if _sel_feats is not None:
+                    trip_val2 = _sel_feats.get(col_name)
+                    if trip_val2 is not None:
+                        fig_v.add_vline(
+                            x=float(trip_val2), line_color=RED, line_width=2.5,
+                            annotation_text=f'선택 {trip_val2:.2f}',
+                            annotation_font_color=RED, annotation_font_size=9,
+                            annotation_position='top right',
+                        )
                 fig_v.update_layout(
                     title={'text': label, 'font': {'color': TXT, 'size': 12}, 'x': 0.03},
                     height=260, paper_bgcolor='rgba(0,0,0,0)',
@@ -567,9 +619,14 @@ if page == "데이터 현황":
                 )
                 t2_cols[idx].plotly_chart(fig_v, use_container_width=True,
                                           config={'displayModeBar': False})
-            st.markdown(
-                '<div class="insight">값이 클수록 해당 트립의 주행 조건이 불안정했음을 나타냅니다. 주황 점선은 전체 트립 평균입니다.</div>',
-                unsafe_allow_html=True)
+            if _sel_feats is not None:
+                st.markdown(
+                    f'<div class="insight">주황 점선 = 전체 평균 · <span style="color:{RED};font-weight:600">빨간 실선</span> = <strong>{trip_label_d}</strong> 트립 위치 · 값이 클수록 주행 조건이 불안정합니다</div>',
+                    unsafe_allow_html=True)
+            else:
+                st.markdown(
+                    '<div class="insight">값이 클수록 해당 트립의 주행 조건이 불안정했음을 나타냅니다. 주황 점선은 전체 트립 평균입니다.</div>',
+                    unsafe_allow_html=True)
 
     # ── Tab 3 : 트립 시계열 ────────────────────────────────────
     with tab3:
