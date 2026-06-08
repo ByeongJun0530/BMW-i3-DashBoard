@@ -1,0 +1,10 @@
+﻿Notebook,Model,Method,Eval,RMSE_mean,RMSE_std,R2
+AB통합,CatBoost,Optuna (30 trials),5-Fold CV RMSE,3.140939,,
+AB통합,CatBoost,GridSearch (27 cand),5-Fold CV RMSE,3.046022,,
+AB통합,CatBoost,Final (RepeatedKFold 5x10),50-Fold RMSE,3.269606,1.550843,
+B만,CatBoost,Optuna (best),5-Fold CV RMSE,3.971764,,
+B만,CatBoost,RepeatedKFold 5x10,50-Fold RMSE,4.168005,1.72641,
+B만,RandomForest,Optuna (best),5-Fold CV R2,,,0.743901
+B만,RandomForest,RepeatedKFold 5x10,50-Fold RMSE,5.274766,1.809972,
+B만,XGBoost,Optuna (best),5-Fold CV RMSE,4.384557,,
+B만,XGBoost,RepeatedKFold 5x10,50-Fold RMSE,4.889473,1.52547,
