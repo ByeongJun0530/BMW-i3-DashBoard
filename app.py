@@ -242,11 +242,50 @@ def compute_trip_features(df):
 
 
 @st.cache_data(show_spinner=False)
+def load_averaged_timeseries(trip_files_tuple):
+    N_POINTS = 300
+    pct_grid = np.linspace(0, 100, N_POINTS)
+    ch = {'v': [], 'ac': [], 'sc': [], 'bt': []}
+    for fname in trip_files_tuple:
+        df_raw = load_trip_raw(fname)
+        if df_raw.empty:
+            continue
+        t_col = next((c for c in df_raw.columns if 'time' in c.lower()), None)
+        if t_col is None:
+            continue
+        t_raw = pd.to_numeric(df_raw[t_col], errors='coerce')
+        t_min, t_max = t_raw.min(), t_raw.max()
+        if pd.isna(t_min) or pd.isna(t_max) or t_max == t_min:
+            continue
+        t_pct = (t_raw - t_min) / (t_max - t_min) * 100
+        v_col  = next((c for c in df_raw.columns if 'velocity' in c.lower()), None)
+        ac_col = next((c for c in df_raw.columns if 'longitudinal acceleration' in c.lower()), None)
+        sc_col = next((c for c in df_raw.columns
+                       if 'soc [%]' in c.lower() and 'max' not in c.lower()
+                       and 'min' not in c.lower() and 'displayed' not in c.lower()), None)
+        bt_col = next((c for c in df_raw.columns
+                       if 'battery temperature' in c.lower() and 'max' not in c.lower()), None)
+        for col_name, key in [(v_col, 'v'), (ac_col, 'ac'), (sc_col, 'sc'), (bt_col, 'bt')]:
+            if col_name is None or col_name not in df_raw.columns:
+                continue
+            y = pd.to_numeric(df_raw[col_name], errors='coerce')
+            mask = ~(t_pct.isna() | y.isna())
+            if mask.sum() < 5:
+                continue
+            tv = t_pct[mask].values
+            yv = y[mask].values
+            sidx = np.argsort(tv)
+            ch[key].append(np.interp(pct_grid, tv[sidx], yv[sidx]))
+    avg = {k: np.mean(v, axis=0) if v else None for k, v in ch.items()}
+    return pct_grid, avg
+
+
+@st.cache_data(show_spinner=False)
 def load_model_comparison():
     base_path = os.path.join('model comparison', 'baseline_model_comparison.csv')
     opt_path  = os.path.join('model comparison', 'optuna_gridsearch_comparison.csv')
-    df_base = pd.read_csv(base_path) if os.path.exists(base_path) else pd.DataFrame()
-    df_opt  = pd.read_csv(opt_path)  if os.path.exists(opt_path)  else pd.DataFrame()
+    df_base = pd.read_csv(base_path, encoding='utf-8') if os.path.exists(base_path) else pd.DataFrame()
+    df_opt  = pd.read_csv(opt_path,  encoding='utf-8') if os.path.exists(opt_path)  else pd.DataFrame()
     return df_base, df_opt
 
 
@@ -371,6 +410,8 @@ with st.sidebar:
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
     selected_trip = None
+    selected_data_trip = "전체"
+
     if page == "트립별 주행거리 예측":
         if trip_list:
             st.markdown(
@@ -380,6 +421,20 @@ with st.sidebar:
             selected_trip = st.selectbox("trip", trip_list, label_visibility='collapsed')
         else:
             st.warning('data/ 폴더에 트립 파일이 없습니다.')
+
+    elif page == "데이터 현황":
+        if trip_list:
+            st.markdown(
+                f'<div style="color:{SUB};font-size:.82rem;font-weight:600;'
+                f'letter-spacing:.5px;margin-bottom:6px">트립 선택</div>',
+                unsafe_allow_html=True)
+            data_trip_opts = ["전체"] + trip_list
+            selected_data_trip = st.selectbox(
+                "data_trip", data_trip_opts,
+                format_func=lambda x: x.replace('.csv', '') if x != '전체' else '전체',
+                key='sidebar_data_trip',
+                label_visibility='collapsed'
+            )
 
     badge_html = (f'<span class="badge" style="background:{GREEN};color:#000">● 실데이터</span>'
                   if source == 'real' else
@@ -521,83 +576,92 @@ if page == "데이터 현황":
         if not trip_list:
             st.info('data/ 폴더에 트립 CSV 파일이 없습니다.')
         else:
-            sel_ts_trip = st.selectbox(
-                '트립 선택', trip_list,
-                format_func=lambda x: x.replace('.csv', ''),
-                key='tab3_trip_select',
-            )
-            ts_df = load_trip_raw(sel_ts_trip)
-            if ts_df.empty:
-                st.warning('데이터를 불러올 수 없습니다.')
-            else:
-                ts_t  = next((c for c in ts_df.columns if 'time' in c.lower()), None)
-                ts_v  = next((c for c in ts_df.columns if 'velocity' in c.lower()), None)
-                ts_ac = next((c for c in ts_df.columns
-                              if 'longitudinal acceleration' in c.lower()), None)
-                ts_sc = next((c for c in ts_df.columns
-                              if 'soc [%]' in c.lower()
-                              and 'max' not in c.lower()
-                              and 'min' not in c.lower()
-                              and 'displayed' not in c.lower()), None)
-                ts_bt = next((c for c in ts_df.columns
-                              if 'battery temperature' in c.lower()
-                              and 'max' not in c.lower()), None)
+            def _draw_ts_subplots(x_vals, panels_data, x_label, caption_text):
+                n3 = len(panels_data)
+                t3_fig = make_subplots(rows=n3, cols=1, shared_xaxes=True,
+                                       row_heights=[1] * n3, vertical_spacing=0.04)
+                for ri, (y3, lbl, unit, clr, fc, do_fill) in enumerate(panels_data, 1):
+                    t3_fig.add_trace(go.Scatter(
+                        x=x_vals, y=y3, mode='lines', name=lbl,
+                        line={'color': clr, 'width': 1.5},
+                        fill='tozeroy' if do_fill else 'none',
+                        fillcolor=fc if do_fill else None, showlegend=True,
+                    ), row=ri, col=1)
+                    if 'ac' in lbl.lower() or '가속' in lbl:
+                        t3_fig.add_hline(y=0, line_color=SUB, line_dash='dot',
+                                         line_width=0.8, row=ri, col=1)
+                    t3_fig.update_yaxes(
+                        title_text=f'{lbl}<br>({unit})',
+                        title_font={'size': 9, 'color': SUB},
+                        gridcolor=LINE, color=SUB, tickfont={'size': 8},
+                        row=ri, col=1)
+                for r in range(1, n3 + 1):
+                    t3_fig.update_xaxes(
+                        gridcolor=LINE, color=SUB, tickfont={'size': 9},
+                        showticklabels=(r == n3),
+                        title_text=x_label if r == n3 else '',
+                        title_font={'size': 10, 'color': SUB},
+                        row=r, col=1)
+                t3_fig.update_layout(
+                    height=80 + n3 * 130,
+                    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                    margin=dict(l=70, r=20, t=16, b=40),
+                    legend={'font': {'color': SUB, 'size': 10},
+                            'bgcolor': 'rgba(0,0,0,0)',
+                            'orientation': 'h', 'x': 0, 'y': 1.02})
+                st.plotly_chart(t3_fig, use_container_width=True, config={'displayModeBar': False})
+                st.caption(caption_text)
 
-                if ts_t:
-                    t3_t_ser = pd.to_numeric(ts_df[ts_t], errors='coerce') / 60
-                    panels_def3 = [
-                        (ts_v,  '속도',         'km/h', BMW_BLUE, 'rgba(28,105,212,0.15)', True),
-                        (ts_ac, '종방향 가속도', 'm/s²', AMBER,   'rgba(255,176,0,0.10)',  False),
-                        (ts_sc, 'SoC',           '%',    GREEN,   'rgba(0,200,150,0.12)',  True),
-                        (ts_bt, '배터리 온도',   '°C',   RED,     'rgba(232,64,64,0.10)',  False),
-                    ]
-                    t3_panels = [(c, l, u, cl, fc, fi)
-                                 for c, l, u, cl, fc, fi in panels_def3
-                                 if c and c in ts_df.columns]
-                    if t3_panels:
-                        n3 = len(t3_panels)
-                        t3_fig = make_subplots(
-                            rows=n3, cols=1,
-                            shared_xaxes=True,
-                            row_heights=[1] * n3,
-                            vertical_spacing=0.04,
-                        )
-                        for ri, (cn, lbl, unit, clr, fc, do_fill) in enumerate(t3_panels, 1):
-                            y3 = pd.to_numeric(ts_df[cn], errors='coerce')
-                            t3_fig.add_trace(go.Scatter(
-                                x=t3_t_ser, y=y3, mode='lines', name=lbl,
-                                line={'color': clr, 'width': 1.5},
-                                fill='tozeroy' if do_fill else 'none',
-                                fillcolor=fc if do_fill else None,
-                                showlegend=True,
-                            ), row=ri, col=1)
-                            if 'acceleration' in cn.lower():
-                                t3_fig.add_hline(y=0, line_color=SUB, line_dash='dot',
-                                                 line_width=0.8, row=ri, col=1)
-                            t3_fig.update_yaxes(
-                                title_text=f'{lbl}<br>({unit})',
-                                title_font={'size': 9, 'color': SUB},
-                                gridcolor=LINE, color=SUB, tickfont={'size': 8},
-                                row=ri, col=1,
-                            )
-                        for r in range(1, n3 + 1):
-                            t3_fig.update_xaxes(
-                                gridcolor=LINE, color=SUB, tickfont={'size': 9},
-                                showticklabels=(r == n3),
-                                title_text='시간 (분)' if r == n3 else '',
-                                title_font={'size': 10, 'color': SUB},
-                                row=r, col=1,
-                            )
-                        t3_fig.update_layout(
-                            height=80 + n3 * 130,
-                            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                            margin=dict(l=70, r=20, t=16, b=40),
-                            legend={'font': {'color': SUB, 'size': 10},
-                                    'bgcolor': 'rgba(0,0,0,0)',
-                                    'orientation': 'h', 'x': 0, 'y': 1.02},
-                        )
-                        st.plotly_chart(t3_fig, use_container_width=True,
-                                        config={'displayModeBar': False})
+            if selected_data_trip == "전체":
+                pct_grid, avg = load_averaged_timeseries(tuple(trip_list))
+                panels_avg_def = [
+                    ('v',  '속도',         'km/h', BMW_BLUE, 'rgba(28,105,212,0.15)', True),
+                    ('ac', '종방향 가속도', 'm/s²', AMBER,   'rgba(255,176,0,0.10)',  False),
+                    ('sc', 'SoC',           '%',    GREEN,   'rgba(0,200,150,0.12)',  True),
+                    ('bt', '배터리 온도',   '°C',   RED,     'rgba(232,64,64,0.10)',  False),
+                ]
+                panels_avg = [(avg[k], lbl, unit, clr, fc, fi)
+                              for k, lbl, unit, clr, fc, fi in panels_avg_def
+                              if avg.get(k) is not None]
+                if panels_avg:
+                    _draw_ts_subplots(pct_grid, panels_avg,
+                                      '주행 진행률 (%)',
+                                      f'전체 {len(trip_list)}개 트립의 평균 시계열 · 가로축은 주행 완료 비율입니다')
+                else:
+                    st.warning('평균 계산에 사용할 수 있는 트립 데이터가 없습니다.')
+            else:
+                ts_df = load_trip_raw(selected_data_trip)
+                if ts_df.empty:
+                    st.warning('데이터를 불러올 수 없습니다.')
+                else:
+                    ts_t  = next((c for c in ts_df.columns if 'time' in c.lower()), None)
+                    ts_v  = next((c for c in ts_df.columns if 'velocity' in c.lower()), None)
+                    ts_ac = next((c for c in ts_df.columns
+                                  if 'longitudinal acceleration' in c.lower()), None)
+                    ts_sc = next((c for c in ts_df.columns
+                                  if 'soc [%]' in c.lower()
+                                  and 'max' not in c.lower()
+                                  and 'min' not in c.lower()
+                                  and 'displayed' not in c.lower()), None)
+                    ts_bt = next((c for c in ts_df.columns
+                                  if 'battery temperature' in c.lower()
+                                  and 'max' not in c.lower()), None)
+                    if ts_t:
+                        t3_t_ser = pd.to_numeric(ts_df[ts_t], errors='coerce') / 60
+                        panels_def3 = [
+                            (ts_v,  '속도',         'km/h', BMW_BLUE, 'rgba(28,105,212,0.15)', True),
+                            (ts_ac, '종방향 가속도', 'm/s²', AMBER,   'rgba(255,176,0,0.10)',  False),
+                            (ts_sc, 'SoC',           '%',    GREEN,   'rgba(0,200,150,0.12)',  True),
+                            (ts_bt, '배터리 온도',   '°C',   RED,     'rgba(232,64,64,0.10)',  False),
+                        ]
+                        t3_panels = [(pd.to_numeric(ts_df[c], errors='coerce'),
+                                      l, u, cl, fc, fi)
+                                     for c, l, u, cl, fc, fi in panels_def3
+                                     if c and c in ts_df.columns]
+                        if t3_panels:
+                            _draw_ts_subplots(t3_t_ser, t3_panels,
+                                              '시간 (분)',
+                                              selected_data_trip.replace('.csv', '') + ' 트립 원본 시계열')
 
     # ── 상관관계 히트맵 ───────────────────────────────────────
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
@@ -960,31 +1024,30 @@ elif page == "주행거리 예측":
 # ════════════════════════════════════════════════════════════════
 elif page == "모델 분석":
     st.markdown('<div class="bmw-title">모델 분석</div>', unsafe_allow_html=True)
-    st.markdown('<div class="bmw-sub">예측 성능 · 잔차 분석 · 베이스라인 / Optuna / GridSearch 비교</div>',
+    st.markdown('<div class="bmw-sub">예측 성능 · 잔차 분석 · Optuna / GridSearch 튜닝 비교</div>',
                 unsafe_allow_html=True)
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
     _df_base_kpi, _df_opt_kpi = load_model_comparison()
 
-    # 최고 R²: df_base > 현재 모델 순으로 fallback
+    # 최고 R²: 베이스라인 > 현재 모델 순으로 fallback
     if not _df_base_kpi.empty and 'R2' in _df_base_kpi.columns:
         best_r2  = float(_df_base_kpi['R2'].max())
     else:
         best_r2  = metrics['R2']
-    # 최저 RMSE: df_opt > df_base > 현재 모델 순으로 fallback
+    # 최저 RMSE: 튜닝 결과 > 현재 모델 순으로 fallback
     if not _df_opt_kpi.empty and 'RMSE_mean' in _df_opt_kpi.columns:
-        best_rmse = float(_df_opt_kpi['RMSE_mean'].min())
-    elif not _df_base_kpi.empty and 'RMSE' in _df_base_kpi.columns:
-        best_rmse = float(_df_base_kpi['RMSE'].min())
+        _rmse_min = _df_opt_kpi['RMSE_mean'].min()
+        best_rmse = float(_rmse_min) if not pd.isna(_rmse_min) else metrics['RMSE']
     else:
         best_rmse = metrics['RMSE']
 
     k1, k2, k3, k4 = st.columns(4)
     for col2, val, lab, vc in [
-        (k1, f"{best_r2:.4f}",          "최고 R² (튜닝 후)", GREEN),
+        (k1, f"{best_r2:.4f}",          "최고 R² (베이스라인)", GREEN),
         (k2, f"{best_rmse:.2f} km",     "최저 RMSE (튜닝 후)", GREEN),
-        (k3, f"{metrics['MAE']:.2f} km", "현재 MAE",          TXT),
-        (k4, f"{metrics['n']}건",        "전체 데이터",         TXT),
+        (k3, f"{metrics['MAE']:.2f} km", "현재 MAE",           TXT),
+        (k4, f"{metrics['n']}건",        "전체 데이터",          TXT),
     ]:
         col2.markdown(
             f'<div class="kpi"><div class="v" style="color:{vc}">{val}</div>'
@@ -1064,81 +1127,39 @@ elif page == "모델 분석":
     예측의 <strong>50%</strong>는 ±{p50:.1f} km, <strong>80%</strong>는 ±{p80:.1f} km 이내</div>
     """, unsafe_allow_html=True)
 
-    # ── 베이스라인 & Optuna 비교 ──────────────────────────────
-    df_base, df_opt = load_model_comparison()
-
-    if not df_base.empty:
-        st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-        st.markdown('<div class="sec-head">베이스라인 모델 비교 (AB통합 vs B만)</div>',
-                    unsafe_allow_html=True)
-
-        best_base = (df_base.sort_values('R2', ascending=False)
-                     .groupby(['Notebook', 'Model'], as_index=False).first())
-        notebooks = ['AB통합', 'B만']
-        models_list = ['CatBoost', 'XGBoost', 'RandomForest', 'LightGBM']
-        nb_colors = {'AB통합': BMW_BLUE, 'B만': GREEN}
-
-        bl_l, bl_r = st.columns(2)
-        for out_col, mkey, ylabel, yrange in [
-            (bl_l, 'R2',   'R² Score',  [0, 1.12]),
-            (bl_r, 'RMSE', 'RMSE (km)', None),
-        ]:
-            with out_col:
-                fig = go.Figure()
-                for nb in notebooks:
-                    sub = best_base[best_base['Notebook'] == nb]
-                    vals = [float(sub[sub['Model'] == m][mkey].values[0])
-                            if len(sub[sub['Model'] == m]) > 0 else 0.0
-                            for m in models_list]
-                    fig.add_trace(go.Bar(
-                        name=nb, x=models_list, y=vals,
-                        marker_color=nb_colors.get(nb, AMBER),
-                        text=[f'{v:.3f}' if v > 0 else '—' for v in vals],
-                        textposition='outside', textfont={'color': TXT, 'size': 10},
-                    ))
-                y_cfg = {'gridcolor': LINE, 'color': SUB, 'title': ylabel}
-                if yrange:
-                    y_cfg['range'] = yrange
-                fig.update_layout(
-                    height=320, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                    margin=dict(l=10, r=10, t=10, b=10),
-                    barmode='group', xaxis={'color': TXT}, yaxis=y_cfg,
-                    legend={'font': {'color': SUB}},
-                )
-                st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-
-        best_row = df_base.loc[df_base['R2'].idxmax()]
-        st.markdown(f"""
-        <div class="insight">최고 성능: <strong>{best_row['Model']}</strong>
-        ({best_row['Notebook']}) — R² <strong>{best_row['R2']:.3f}</strong>,
-        RMSE <strong>{best_row['RMSE']:.2f} km</strong></div>
-        """, unsafe_allow_html=True)
+    # ── Optuna / GridSearch 튜닝 비교 ────────────────────────
+    _, df_opt = load_model_comparison()
 
     if not df_opt.empty:
         st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
         st.markdown('<div class="sec-head">Optuna · GridSearch 튜닝 성능 비교</div>',
                     unsafe_allow_html=True)
         df_rmse = df_opt[df_opt['RMSE_mean'].notna()].copy()
-        df_rmse['Label'] = (df_rmse['Notebook'] + ' | ' + df_rmse['Model'] + ' | '
-                            + df_rmse['Method'].str.replace(r'\s*\(.*\)', '', regex=True).str.strip())
-        nb_colors_opt = {'AB통합': BMW_BLUE, 'B만': GREEN}
-        bar_colors = [nb_colors_opt.get(nb, AMBER) for nb in df_rmse['Notebook']]
+        df_rmse['Method_short'] = (df_rmse['Method']
+                                   .str.replace(r'\s*\(.*\)', '', regex=True).str.strip())
+        df_rmse['Label'] = (df_rmse['Notebook'] + ' | '
+                            + df_rmse['Model'] + ' | ' + df_rmse['Method_short'])
 
         opt_fig = go.Figure()
-        opt_fig.add_trace(go.Bar(
-            x=df_rmse['Label'], y=df_rmse['RMSE_mean'],
-            error_y=dict(type='data', array=df_rmse['RMSE_std'].fillna(0).tolist(),
-                         visible=True, color=AMBER),
-            marker_color=bar_colors,
-            text=[f'{v:.2f}' for v in df_rmse['RMSE_mean']],
-            textposition='outside', textfont={'color': TXT, 'size': 10},
-        ))
+        for nb, nb_color in [('AB통합', BMW_BLUE), ('B만', GREEN)]:
+            sub = df_rmse[df_rmse['Notebook'] == nb]
+            if sub.empty:
+                continue
+            opt_fig.add_trace(go.Bar(
+                name=nb, x=sub['Label'], y=sub['RMSE_mean'],
+                marker_color=nb_color,
+                error_y=dict(type='data', array=sub['RMSE_std'].fillna(0).tolist(),
+                             visible=True, color=AMBER),
+                text=[f'{v:.2f}' for v in sub['RMSE_mean']],
+                textposition='outside', textfont={'color': TXT, 'size': 10},
+            ))
         opt_fig.update_layout(
-            height=380, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-            margin=dict(l=10, r=10, t=20, b=100),
+            height=400, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+            margin=dict(l=10, r=10, t=20, b=110),
+            barmode='group',
             xaxis={'color': TXT, 'tickangle': -35},
             yaxis={'gridcolor': LINE, 'color': SUB, 'title': 'RMSE (km)'},
-            showlegend=False,
+            legend={'font': {'color': SUB}, 'bgcolor': 'rgba(0,0,0,0)'},
         )
         st.plotly_chart(opt_fig, use_container_width=True, config={'displayModeBar': False})
 
@@ -1146,10 +1167,10 @@ elif page == "모델 분석":
                    if 'AB통합' in df_rmse['Notebook'].values else None)
         b_best  = (df_rmse[df_rmse['Notebook'] == 'B만']['RMSE_mean'].min()
                    if 'B만' in df_rmse['Notebook'].values else None)
-        if ab_best and b_best:
+        if ab_best is not None and b_best is not None:
             st.markdown(f"""
-            <div class="insight">튜닝 후 최고 RMSE — AB통합: <strong>{ab_best:.3f} km</strong>,
-            B만: <strong>{b_best:.3f} km</strong> (AB통합이 {b_best-ab_best:.3f} km 낮음)</div>
+            <div class="insight">튜닝 후 최저 RMSE — AB통합: <strong>{ab_best:.3f} km</strong> ·
+            B만: <strong>{b_best:.3f} km</strong> (AB통합이 {b_best - ab_best:.3f} km 낮음)</div>
             """, unsafe_allow_html=True)
         st.dataframe(df_opt.fillna('—'), use_container_width=True)
 
