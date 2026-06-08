@@ -397,8 +397,8 @@ with st.sidebar:
 
     page = st.radio(
         "페이지 선택",
-        ["  개요 · 홈", "  트립별 예측", "  주행거리 예측",
-         "  모델 성능 분석", "  모델 비교", "  데이터 인사이트", "  변수 중요도"],
+        ["개요 · 홈", "트립별 예측", "주행거리 예측",
+         "모델 성능 분석", "모델 비교", "데이터 인사이트", "변수 중요도"],
         label_visibility="collapsed",
     )
 
@@ -406,7 +406,7 @@ with st.sidebar:
 
     # 트립 선택 드롭다운 (트립 예측 페이지에서만)
     selected_trip = None
-    if page == "  트립별 예측":
+    if page == "트립별 예측":
         if trip_list:
             st.markdown(
                 f'<div style="color:{SUB};font-size:.82rem;font-weight:600;'
@@ -433,7 +433,7 @@ with st.sidebar:
 # ════════════════════════════════════════════════════════════════
 # PAGE 1 : 개요 · 홈
 # ════════════════════════════════════════════════════════════════
-if page == "  개요 · 홈":
+if page == "개요 · 홈":
     st.markdown('<div class="bmw-title">BMW i3 · EV 주행거리 예측</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="bmw-sub">BMW i3 실주행 데이터 · 주행거리(Distance) 예측</div>',
                 unsafe_allow_html=True)
@@ -533,7 +533,7 @@ if page == "  개요 · 홈":
 # ════════════════════════════════════════════════════════════════
 # PAGE 2 : 트립별 예측
 # ════════════════════════════════════════════════════════════════
-elif page == "  트립별 예측":
+elif page == "트립별 예측":
     st.markdown('<div class="bmw-title"> 트립별 주행거리 예측</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="bmw-sub">실제 트립 데이터를 로드하여 AI가 주행거리를 예측합니다 · 사이드바에서 트립을 선택하세요</div>',
                 unsafe_allow_html=True)
@@ -675,7 +675,7 @@ elif page == "  트립별 예측":
 # ════════════════════════════════════════════════════════════════
 # PAGE 3 : 주행거리 예측 (슬라이더)
 # ════════════════════════════════════════════════════════════════
-elif page == "🔮  주행거리 예측":
+elif page == "주행거리 예측":
     st.markdown('<div class="bmw-title"> 주행거리 예측</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="bmw-sub">슬라이더로 주행 조건을 설정하면 AI가 주행거리를 실시간 예측합니다</div>',
                 unsafe_allow_html=True)
@@ -850,7 +850,7 @@ elif page == "🔮  주행거리 예측":
 # ════════════════════════════════════════════════════════════════
 # PAGE 4 : 모델 성능 분석
 # ════════════════════════════════════════════════════════════════
-elif page == "  모델 성능 분석":
+elif page == "모델 성능 분석":
     st.markdown('<div class="bmw-title"> 모델 성능 분석</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="bmw-sub">CatBoost 모델의 예측 정확도 · 잔차 분석 · 오차 분포</div>',
                 unsafe_allow_html=True)
@@ -967,7 +967,7 @@ elif page == "  모델 성능 분석":
 # ════════════════════════════════════════════════════════════════
 # PAGE 5 : 모델 비교
 # ════════════════════════════════════════════════════════════════
-elif page == "🏆  모델 비교":
+elif page == "모델 비교":
     st.markdown('<div class="bmw-title"> 모델 성능 비교</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="bmw-sub">베이스라인 · Optuna · GridSearch 모델 성능 비교 분석</div>',
                 unsafe_allow_html=True)
@@ -1115,7 +1115,7 @@ elif page == "🏆  모델 비교":
 # ════════════════════════════════════════════════════════════════
 # PAGE 6 : 데이터 인사이트
 # ════════════════════════════════════════════════════════════════
-elif page == "  데이터 인사이트":
+elif page == "데이터 인사이트":
     st.markdown('<div class="bmw-title">📈 데이터 인사이트</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="bmw-sub">주행 패턴 분석 · 변수 간 관계 · 주행 조건별 효율</div>',
                 unsafe_allow_html=True)
@@ -1220,7 +1220,7 @@ elif page == "  데이터 인사이트":
 # ════════════════════════════════════════════════════════════════
 # PAGE 7 : 변수 중요도
 # ════════════════════════════════════════════════════════════════
-elif page == "  변수 중요도":
+elif page == "변수 중요도":
     st.markdown('<div class="bmw-title"> 변수 중요도</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="bmw-sub">CatBoost 피처 중요도 · 주요 변수별 주행거리 민감도 분석</div>',
                 unsafe_allow_html=True)
