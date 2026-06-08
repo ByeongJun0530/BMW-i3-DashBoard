@@ -354,7 +354,7 @@ with st.sidebar:
 
     page = st.radio(
         "페이지 선택",
-        ["개요 · 홈", "트립별 예측", "주행거리 예측", "모델 분석", "변수 분석"],
+        ["데이터 현황", "트립별 예측", "주행거리 예측", "모델 분석", "변수 분석"],
         label_visibility="collapsed",
     )
 
@@ -382,85 +382,247 @@ with st.sidebar:
 
 
 # ════════════════════════════════════════════════════════════════
-# PAGE 1 : 개요 · 홈
+# PAGE 1 : 데이터 현황
 # ════════════════════════════════════════════════════════════════
-if page == "개요 · 홈":
-    st.markdown('<div class="bmw-title">BMW i3 · EV 주행거리 예측</div>', unsafe_allow_html=True)
-    st.markdown('<div class="bmw-sub">BMW i3 실주행 데이터 기반 주행거리 예측 대시보드</div>',
+if page == "데이터 현황":
+    st.markdown('<div class="bmw-title">BMW i3 · 주행 데이터 현황</div>', unsafe_allow_html=True)
+    st.markdown('<div class="bmw-sub">트립 집계 데이터 탐색 · 변수 분포 · Type 비교 · 상관관계</div>',
                 unsafe_allow_html=True)
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
-    # ── KPI 카드 ─────────────────────────────────────────────
+    # ── 데이터 요약 KPI ───────────────────────────────────────
     k1, k2, k3, k4, k5 = st.columns(5)
-    dist_mean = df['Distance'].mean()    if 'Distance'      in df.columns else 0
-    dur_mean  = df['Duration'].mean()    if 'Duration'      in df.columns else 0
-    vel_mean  = df['Velocity_mean'].mean() if 'Velocity_mean' in df.columns else 0
-    soc_mean  = df['SOC_Consumed'].mean() * 100 if 'SOC_Consumed' in df.columns else 0
-    r2c = GREEN if metrics['R2'] >= 0.8 else AMBER
-    for c_, val, lab, vc in [
-        (k1, f'{len(df)}건',          '총 트립 수',     TXT),
-        (k2, f'{dist_mean:.1f} km',   '평균 주행거리',  TXT),
-        (k3, f'{dur_mean:.0f} min',   '평균 주행시간',  TXT),
-        (k4, f'{vel_mean:.1f} km/h',  '평균 속도',      TXT),
-        (k5, f'R² {metrics["R2"]:.3f}', '모델 R²',     r2c),
+    dist_mean = df['Distance'].mean()          if 'Distance'      in df.columns else 0
+    dist_std  = df['Distance'].std()           if 'Distance'      in df.columns else 0
+    dur_mean  = df['Duration'].mean()          if 'Duration'      in df.columns else 0
+    vel_mean  = df['Velocity_mean'].mean()     if 'Velocity_mean' in df.columns else 0
+    soc_mean  = df['SOC_Consumed'].mean()*100  if 'SOC_Consumed'  in df.columns else 0
+
+    for c_, val, lab in [
+        (k1, f'{len(df)}건',         '총 트립 수'),
+        (k2, f'{dist_mean:.1f} km',  '평균 주행거리'),
+        (k3, f'±{dist_std:.1f} km',  '주행거리 편차'),
+        (k4, f'{vel_mean:.1f} km/h', '평균 속도'),
+        (k5, f'{soc_mean:.1f} %',    '평균 SOC 소모'),
     ]:
-        c_.markdown(
-            f'<div class="kpi"><div class="v" style="color:{vc}">{val}</div>'
-            f'<div class="l">{lab}</div></div>',
-            unsafe_allow_html=True)
+        c_.markdown(f'<div class="kpi"><div class="v">{val}</div>'
+                   f'<div class="l">{lab}</div></div>', unsafe_allow_html=True)
 
     st.markdown('<div style="height:18px"></div>', unsafe_allow_html=True)
 
-    # ── 주요 변수 분포 그리드 ─────────────────────────────────
-    st.markdown('<div class="sec-head">주요 변수 분포</div>', unsafe_allow_html=True)
-
-    dist_vars_def = [
-        ('Distance',               '주행거리',      'km'),
-        ('Duration',               '주행시간',      'min'),
-        ('Velocity_mean',          '평균 속도',     'km/h'),
-        ('SOC_Consumed',           'SOC 소모',      '%'),
-        ('Accel_abs_mean',         '평균 가속도',   'm/s²'),
-        ('Heating_Power_CAN_mean', '평균 난방출력', 'kW'),
-    ]
-    dist_vars = [(c, l, u) for c, l, u in dist_vars_def if c in df.columns]
+    # ── 인터랙티브 분포 탭 ────────────────────────────────────
     DIST_COLORS = [BMW_BLUE, BMW_LIGHT, GREEN, AMBER, '#9C6EDD', '#FF6B8A']
 
-    if dist_vars:
-        r1 = st.columns(3)
-        r2 = st.columns(3)
-        all_grid = r1 + r2
-        for idx, (col_name, label, unit) in enumerate(dist_vars[:6]):
-            vals = df[col_name].dropna()
-            if col_name == 'SOC_Consumed':
-                vals = vals * 100
-            fig_h = go.Figure()
-            fig_h.add_trace(go.Histogram(
-                x=vals, nbinsx=25,
-                marker_color=DIST_COLORS[idx % len(DIST_COLORS)],
-                opacity=0.82, showlegend=False,
-            ))
-            fig_h.add_vline(
-                x=float(vals.mean()), line_color=AMBER,
-                line_width=1.5, line_dash='dash',
-                annotation_text=f'μ={vals.mean():.1f}',
-                annotation_font_color=AMBER, annotation_font_size=9,
-            )
-            fig_h.update_layout(
-                title={'text': f'{label} ({unit})',
-                       'font': {'color': TXT, 'size': 11}, 'x': 0.03},
-                height=185, paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                margin=dict(l=5, r=5, t=32, b=5),
-                xaxis={'gridcolor': LINE, 'color': SUB, 'tickfont': {'size': 9}},
-                yaxis={'gridcolor': LINE, 'color': SUB, 'tickfont': {'size': 9}},
-                showlegend=False,
-            )
-            all_grid[idx].plotly_chart(fig_h, use_container_width=True,
-                                       config={'displayModeBar': False})
+    tab1, tab2, tab3 = st.tabs(["주요 변수 분포", "변화량 분포", "Type A/B 비교"])
 
-    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+    # ── Tab 1 : 주요 변수 분포 ─────────────────────────────────
+    with tab1:
+        dist_vars_def = [
+            ('Distance',               '주행거리',       'km'),
+            ('Duration',               '주행시간',       'min'),
+            ('Velocity_mean',          '평균 속도',      'km/h'),
+            ('SOC_Consumed',           'SOC 소모',       '%'),
+            ('Accel_abs_mean',         '평균 가속도',    'm/s²'),
+            ('Heating_Power_CAN_mean', '평균 난방출력',  'kW'),
+        ]
+        dist_vars = [(c, l, u) for c, l, u in dist_vars_def if c in df.columns]
+        if dist_vars:
+            rA = st.columns(3); rB = st.columns(3)
+            for idx, (col_name, label, unit) in enumerate(dist_vars[:6]):
+                vals = df[col_name].dropna()
+                if col_name == 'SOC_Consumed':
+                    vals = vals * 100
+                fig_h = go.Figure()
+                fig_h.add_trace(go.Histogram(
+                    x=vals, nbinsx=25,
+                    marker_color=DIST_COLORS[idx % len(DIST_COLORS)],
+                    opacity=0.82, showlegend=False,
+                ))
+                fig_h.add_vline(
+                    x=float(vals.mean()), line_color=AMBER,
+                    line_width=1.5, line_dash='dash',
+                    annotation_text=f'μ={vals.mean():.1f}',
+                    annotation_font_color=AMBER, annotation_font_size=9,
+                )
+                fig_h.update_layout(
+                    title={'text': f'{label} ({unit})',
+                           'font': {'color': TXT, 'size': 11}, 'x': 0.03},
+                    height=190, paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    margin=dict(l=5, r=5, t=32, b=5),
+                    xaxis={'gridcolor': LINE, 'color': SUB, 'tickfont': {'size': 9}},
+                    yaxis={'gridcolor': LINE, 'color': SUB, 'tickfont': {'size': 9}},
+                )
+                grid_col = (rA + rB)[idx]
+                grid_col.plotly_chart(fig_h, use_container_width=True,
+                                      config={'displayModeBar': False})
+
+    # ── Tab 2 : 변화량 분포 ────────────────────────────────────
+    with tab2:
+        var_vars_def = [
+            ('Velocity_std',                  '속도 표준편차',         'km/h'),
+            ('Velocity_diff_std',             '속도 변화율 편차',      'km/h'),
+            ('Battery_Temperature_std',       '배터리 온도 변동',      '°C'),
+            ('Battery_Temperature_diff_max',  '배터리 온도 최대변화',  '°C'),
+            ('Longitudinal_Acceleration_std', '가속도 표준편차',       'm/s²'),
+            ('Accel_abs_std',                 '절대가속 편차',         'm/s²'),
+        ]
+        var_vars = [(c, l, u) for c, l, u in var_vars_def if c in df.columns]
+        if var_vars:
+            rv1 = st.columns(3); rv2 = st.columns(3)
+            for idx, (col_name, label, unit) in enumerate(var_vars[:6]):
+                vals = df[col_name].dropna()
+                fig_v = go.Figure()
+                fig_v.add_trace(go.Histogram(
+                    x=vals, nbinsx=25,
+                    marker_color=DIST_COLORS[idx % len(DIST_COLORS)],
+                    opacity=0.82, showlegend=False,
+                ))
+                fig_v.add_vline(
+                    x=float(vals.mean()), line_color=AMBER,
+                    line_width=1.5, line_dash='dash',
+                    annotation_text=f'μ={vals.mean():.2f}',
+                    annotation_font_color=AMBER, annotation_font_size=9,
+                )
+                fig_v.update_layout(
+                    title={'text': f'{label} ({unit})',
+                           'font': {'color': TXT, 'size': 11}, 'x': 0.03},
+                    height=190, paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    margin=dict(l=5, r=5, t=32, b=5),
+                    xaxis={'gridcolor': LINE, 'color': SUB, 'tickfont': {'size': 9}},
+                    yaxis={'gridcolor': LINE, 'color': SUB, 'tickfont': {'size': 9}},
+                )
+                (rv1 + rv2)[idx].plotly_chart(fig_v, use_container_width=True,
+                                              config={'displayModeBar': False})
+            st.markdown(
+                '<div class="insight">변화량(표준편차·최대변화)이 클수록 해당 트립의 주행 조건이 불안정했음을 나타냅니다.</div>',
+                unsafe_allow_html=True)
+
+    # ── Tab 3 : Type A/B 비교 ──────────────────────────────────
+    with tab3:
+        # Type/Series 컬럼 자동 탐색
+        type_col = None
+        for _cand in ['Type', 'Series', 'Group', 'Notebook', 'Dataset', 'Category', 'AB']:
+            if _cand in df.columns and 1 < df[_cand].nunique() <= 4:
+                type_col = _cand
+                break
+        if type_col is None:
+            for _c in df.columns:
+                if df[_c].dtype == object and 1 < df[_c].nunique() <= 4:
+                    type_col = _c
+                    break
+
+        compare_vars_def = [
+            ('Distance',               '주행거리',    'km'),
+            ('Duration',               '주행시간',    'min'),
+            ('Velocity_mean',          '평균 속도',   'km/h'),
+            ('SOC_Consumed',           'SOC 소모',    '%'),
+            ('Accel_abs_mean',         '평균 가속도', 'm/s²'),
+            ('Battery_Temperature_std','배터리 온도 변동','°C'),
+        ]
+        compare_vars = [(c, l, u) for c, l, u in compare_vars_def if c in df.columns]
+        grp_palette = [BMW_BLUE, GREEN, AMBER, RED]
+
+        if type_col is not None:
+            groups = sorted(df[type_col].dropna().unique().tolist())
+            st.caption(f'구분 기준 컬럼: **{type_col}** · 그룹: {groups}')
+
+            # 오버레이 히스토그램 (3×2)
+            rc1 = st.columns(3); rc2 = st.columns(3)
+            for idx, (col_name, label, unit) in enumerate(compare_vars[:6]):
+                fig_c = go.Figure()
+                for gi, grp in enumerate(groups):
+                    vals = df[df[type_col] == grp][col_name].dropna()
+                    if col_name == 'SOC_Consumed':
+                        vals = vals * 100
+                    fig_c.add_trace(go.Histogram(
+                        x=vals, nbinsx=20, name=str(grp),
+                        marker_color=grp_palette[gi % len(grp_palette)],
+                        opacity=0.6, showlegend=(idx == 0),
+                    ))
+                fig_c.update_layout(
+                    title={'text': f'{label} ({unit})',
+                           'font': {'color': TXT, 'size': 11}, 'x': 0.03},
+                    height=190, barmode='overlay',
+                    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                    margin=dict(l=5, r=5, t=32, b=5),
+                    xaxis={'gridcolor': LINE, 'color': SUB, 'tickfont': {'size': 9}},
+                    yaxis={'gridcolor': LINE, 'color': SUB, 'tickfont': {'size': 9}},
+                    legend={'font': {'color': SUB, 'size': 9},
+                            'orientation': 'h', 'x': 0, 'y': 1.18},
+                )
+                (rc1 + rc2)[idx].plotly_chart(fig_c, use_container_width=True,
+                                               config={'displayModeBar': False})
+
+            # 박스플롯 비교
+            st.markdown('<div class="sec-head" style="margin-top:4px">변수별 박스플롯 비교</div>',
+                        unsafe_allow_html=True)
+            box_vars_def = [('Distance','주행거리'), ('Velocity_mean','평균속도'),
+                            ('SOC_Consumed','SOC소모'), ('Duration','주행시간')]
+            box_vars = [(c, l) for c, l in box_vars_def if c in df.columns]
+            bp_cols = st.columns(len(box_vars))
+            for bi, (bv, bl) in enumerate(box_vars):
+                bp_fig = go.Figure()
+                for gi, grp in enumerate(groups):
+                    vals = df[df[type_col] == grp][bv].dropna()
+                    if bv == 'SOC_Consumed':
+                        vals = vals * 100
+                    bp_fig.add_trace(go.Box(
+                        y=vals, name=str(grp),
+                        marker_color=grp_palette[gi % len(grp_palette)],
+                        line_color=grp_palette[gi % len(grp_palette)],
+                        boxmean=True,
+                    ))
+                bp_fig.update_layout(
+                    title={'text': bl, 'font': {'color': TXT, 'size': 11}, 'x': 0.5},
+                    height=280, paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    margin=dict(l=5, r=5, t=35, b=5),
+                    xaxis={'color': TXT, 'tickfont': {'size': 9}},
+                    yaxis={'gridcolor': LINE, 'color': SUB, 'tickfont': {'size': 9}},
+                    legend={'font': {'color': SUB, 'size': 9}},
+                    showlegend=False,
+                )
+                bp_cols[bi].plotly_chart(bp_fig, use_container_width=True,
+                                         config={'displayModeBar': False})
+
+        else:
+            # 폴백: 주행거리 중앙값 기준 분리
+            st.info('데이터에서 Type/Series 컬럼을 찾지 못했습니다. 주행거리 중앙값 기준으로 비교합니다.')
+            med_dist = df['Distance'].median() if 'Distance' in df.columns else 0
+            group_map = {
+                f'장거리 (>{med_dist:.0f}km)': df[df['Distance'] > med_dist],
+                f'단거리 (≤{med_dist:.0f}km)': df[df['Distance'] <= med_dist],
+            }
+            rc1 = st.columns(3); rc2 = st.columns(3)
+            for idx, (col_name, label, unit) in enumerate(compare_vars[:6]):
+                fig_c2 = go.Figure()
+                for gi, (gname, gdf) in enumerate(group_map.items()):
+                    vals = gdf[col_name].dropna()
+                    if col_name == 'SOC_Consumed':
+                        vals = vals * 100
+                    fig_c2.add_trace(go.Histogram(
+                        x=vals, nbinsx=20, name=gname,
+                        marker_color=grp_palette[gi], opacity=0.65,
+                        showlegend=(idx == 0),
+                    ))
+                fig_c2.update_layout(
+                    title={'text': f'{label} ({unit})',
+                           'font': {'color': TXT, 'size': 11}, 'x': 0.03},
+                    height=190, barmode='overlay',
+                    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                    margin=dict(l=5, r=5, t=32, b=5),
+                    xaxis={'gridcolor': LINE, 'color': SUB, 'tickfont': {'size': 9}},
+                    yaxis={'gridcolor': LINE, 'color': SUB, 'tickfont': {'size': 9}},
+                    legend={'font': {'color': SUB, 'size': 9},
+                            'orientation': 'h', 'x': 0, 'y': 1.18},
+                )
+                (rc1 + rc2)[idx].plotly_chart(fig_c2, use_container_width=True,
+                                               config={'displayModeBar': False})
 
     # ── 상관관계 히트맵 ───────────────────────────────────────
+    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
     st.markdown('<div class="sec-head">주요 변수 상관관계</div>', unsafe_allow_html=True)
     heat_cols = ['Distance', 'Duration', 'Velocity_mean', 'Velocity_max',
                  'SOC_Consumed', 'Accel_abs_mean', 'Battery_Power_mean',
@@ -483,13 +645,10 @@ if page == "개요 · 홈":
     )
     st.plotly_chart(heat, use_container_width=True, config={'displayModeBar': False})
 
-    # ── 데이터 요약 인사이트 ──────────────────────────────────
     corr_v = df['Velocity_mean'].corr(df['Distance']) if 'Velocity_mean' in df.columns else 0
     corr_d = df['Duration'].corr(df['Distance'])      if 'Duration'      in df.columns else 0
     st.markdown(f"""
-    <div class="insight">총 <strong>{len(df)}</strong>건 트립 데이터 — 평균 주행거리 <strong>{dist_mean:.1f} km</strong>,
-    평균 속도 <strong>{vel_mean:.1f} km/h</strong>, 평균 SOC 소모 <strong>{soc_mean:.1f}%</strong></div>
-    <div class="insight">모델 R² <strong>{metrics['R2']:.3f}</strong> · MAE <strong>{metrics['MAE']:.1f} km</strong> ·
+    <div class="insight">총 <strong>{len(df)}</strong>건 트립 — 평균 주행거리 <strong>{dist_mean:.1f} km</strong>,
     속도↔거리 상관 <strong>{corr_v:.2f}</strong> · 시간↔거리 상관 <strong>{corr_d:.2f}</strong></div>
     """, unsafe_allow_html=True)
 
