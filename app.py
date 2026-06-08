@@ -354,10 +354,10 @@ BMW_LOGO_SVG = """
 with st.sidebar:
     st.markdown(f"""
     <div style="padding:16px 0 8px 0">
-      <div style="font-size:1.3rem;font-weight:700;color:{TXT};display:flex;align-items:center">
+      <div style="font-size:1.7rem;font-weight:700;color:{TXT};display:flex;align-items:center">
         {BMW_LOGO_SVG} BMW i3
       </div>
-      <div style="color:{SUB};font-size:.8rem;margin-top:2px">EV 주행거리 예측 대시보드</div>
+      <div style="color:{SUB};font-size:.95rem;margin-top:4px">EV 주행거리 예측 대시보드</div>
     </div>
     <div class="divider"></div>
     """, unsafe_allow_html=True)
