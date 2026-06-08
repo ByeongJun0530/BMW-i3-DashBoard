@@ -403,7 +403,7 @@ with st.sidebar:
 
     page = st.radio(
         "페이지 선택",
-        ["데이터 현황", "트립별 주행거리 예측", "주행거리 예측", "모델 분석", "변수 분석"],
+        ["주행거리 예측", "데이터 현황", "모델 분석", "변수 분석", "트립 예측 검증"],
         label_visibility="collapsed",
     )
 
@@ -412,7 +412,7 @@ with st.sidebar:
     selected_trip = None
     selected_data_trip = "전체"
 
-    if page == "트립별 주행거리 예측":
+    if page == "트립 예측 검증":
         if trip_list:
             st.markdown(
                 f'<div style="color:{SUB};font-size:.82rem;font-weight:600;'
@@ -786,11 +786,11 @@ if page == "데이터 현황":
 
 
 # ════════════════════════════════════════════════════════════════
-# PAGE 2 : 트립별 주행거리 예측
+# PAGE 2 : 트립 예측 검증
 # ════════════════════════════════════════════════════════════════
-elif page == "트립별 주행거리 예측":
-    st.markdown('<div class="bmw-title">트립별 주행거리 예측</div>', unsafe_allow_html=True)
-    st.markdown('<div class="bmw-sub">실제 트립 데이터를 로드하여 AI가 주행거리를 예측합니다 · 사이드바에서 트립을 선택하세요</div>',
+elif page == "트립 예측 검증":
+    st.markdown('<div class="bmw-title">트립 예측 검증</div>', unsafe_allow_html=True)
+    st.markdown('<div class="bmw-sub">실제 트립의 예측값 vs 실제값 비교 · 오차 분석 · 사이드바에서 트립을 선택하세요</div>',
                 unsafe_allow_html=True)
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
