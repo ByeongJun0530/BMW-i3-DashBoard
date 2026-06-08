@@ -251,10 +251,25 @@ model, metrics, importance, cols, medians = train_model(source + str(len(df)), d
 
 
 # ── 사이드바 네비게이션 ──────────────────────────────────────────
+BMW_LOGO_SVG = """
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="32" height="32" style="vertical-align:middle;margin-right:8px">
+  <circle cx="50" cy="50" r="49" fill="#1a1a1a"/>
+  <circle cx="50" cy="50" r="36" fill="#fff"/>
+  <path d="M50 14 A36 36 0 0 1 86 50 L50 50 Z" fill="#1C69D4"/>
+  <path d="M50 86 A36 36 0 0 1 14 50 L50 50 Z" fill="#1C69D4"/>
+  <circle cx="50" cy="50" r="36" fill="none" stroke="#1a1a1a" stroke-width="2"/>
+  <line x1="50" y1="14" x2="50" y2="86" stroke="#1a1a1a" stroke-width="2"/>
+  <line x1="14" y1="50" x2="86" y2="50" stroke="#1a1a1a" stroke-width="2"/>
+  <circle cx="50" cy="50" r="49" fill="none" stroke="#1a1a1a" stroke-width="2"/>
+</svg>
+"""
+
 with st.sidebar:
     st.markdown(f"""
     <div style="padding:16px 0 8px 0">
-      <div style="font-size:1.3rem;font-weight:700;color:{TXT}">🚗 BMW i3</div>
+      <div style="font-size:1.3rem;font-weight:700;color:{TXT};display:flex;align-items:center">
+        {BMW_LOGO_SVG} BMW i3
+      </div>
       <div style="color:{SUB};font-size:.8rem;margin-top:2px">EV 주행거리 예측 대시보드</div>
     </div>
     <div class="divider"></div>
@@ -277,7 +292,6 @@ with st.sidebar:
 
     eng = 'CatBoost' if HAS_CATBOOST else 'GradientBoosting'
     st.caption(f'엔진: {eng}  ·  샘플: {len(df)}건')
-    st.caption('실데이터는 df_final_vif.csv를\n폴더에 넣으면 자동 로드됩니다.')
 
 
 # ════════════════════════════════════════════════════════════════
@@ -285,7 +299,7 @@ with st.sidebar:
 # ════════════════════════════════════════════════════════════════
 if page == "🏠  개요 · 홈":
     st.markdown('<div class="bmw-title">BMW i3 · EV 주행거리 예측</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="bmw-sub">CatBoost 회귀 모델 · BMW i3 실주행 데이터 · 주행거리(Distance) 예측</div>',
+    st.markdown(f'<div class="bmw-sub">BMW i3 실주행 데이터 · 주행거리(Distance) 예측</div>',
                 unsafe_allow_html=True)
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
