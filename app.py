@@ -423,7 +423,7 @@ if page == "데이터 현황":
     # ── 인터랙티브 분포 탭 ────────────────────────────────────
     DIST_COLORS = [BMW_BLUE, BMW_LIGHT, GREEN, AMBER, '#9C6EDD', '#FF6B8A']
 
-    tab1, tab2 = st.tabs(["주요 변수 분포", "변화량 분포"])
+    tab1, tab2, tab3 = st.tabs(["주요 변수 분포", "변화량 분포", "트립 시계열"])
 
     # ── Tab 1 : 주요 변수 분포 ─────────────────────────────────
     with tab1:
@@ -515,6 +515,89 @@ if page == "데이터 현황":
             st.markdown(
                 '<div class="insight">값이 클수록 해당 트립의 주행 조건이 불안정했음을 나타냅니다. 주황 점선은 전체 트립 평균입니다.</div>',
                 unsafe_allow_html=True)
+
+    # ── Tab 3 : 트립 시계열 ────────────────────────────────────
+    with tab3:
+        if not trip_list:
+            st.info('data/ 폴더에 트립 CSV 파일이 없습니다.')
+        else:
+            sel_ts_trip = st.selectbox(
+                '트립 선택', trip_list,
+                format_func=lambda x: x.replace('.csv', ''),
+                key='tab3_trip_select',
+            )
+            ts_df = load_trip_raw(sel_ts_trip)
+            if ts_df.empty:
+                st.warning('데이터를 불러올 수 없습니다.')
+            else:
+                ts_t  = next((c for c in ts_df.columns if 'time' in c.lower()), None)
+                ts_v  = next((c for c in ts_df.columns if 'velocity' in c.lower()), None)
+                ts_ac = next((c for c in ts_df.columns
+                              if 'longitudinal acceleration' in c.lower()), None)
+                ts_sc = next((c for c in ts_df.columns
+                              if 'soc [%]' in c.lower()
+                              and 'max' not in c.lower()
+                              and 'min' not in c.lower()
+                              and 'displayed' not in c.lower()), None)
+                ts_bt = next((c for c in ts_df.columns
+                              if 'battery temperature' in c.lower()
+                              and 'max' not in c.lower()), None)
+
+                if ts_t:
+                    t3_t_ser = pd.to_numeric(ts_df[ts_t], errors='coerce') / 60
+                    panels_def3 = [
+                        (ts_v,  '속도',         'km/h', BMW_BLUE, 'rgba(28,105,212,0.15)', True),
+                        (ts_ac, '종방향 가속도', 'm/s²', AMBER,   'rgba(255,176,0,0.10)',  False),
+                        (ts_sc, 'SoC',           '%',    GREEN,   'rgba(0,200,150,0.12)',  True),
+                        (ts_bt, '배터리 온도',   '°C',   RED,     'rgba(232,64,64,0.10)',  False),
+                    ]
+                    t3_panels = [(c, l, u, cl, fc, fi)
+                                 for c, l, u, cl, fc, fi in panels_def3
+                                 if c and c in ts_df.columns]
+                    if t3_panels:
+                        n3 = len(t3_panels)
+                        t3_fig = make_subplots(
+                            rows=n3, cols=1,
+                            shared_xaxes=True,
+                            row_heights=[1] * n3,
+                            vertical_spacing=0.04,
+                        )
+                        for ri, (cn, lbl, unit, clr, fc, do_fill) in enumerate(t3_panels, 1):
+                            y3 = pd.to_numeric(ts_df[cn], errors='coerce')
+                            t3_fig.add_trace(go.Scatter(
+                                x=t3_t_ser, y=y3, mode='lines', name=lbl,
+                                line={'color': clr, 'width': 1.5},
+                                fill='tozeroy' if do_fill else 'none',
+                                fillcolor=fc if do_fill else None,
+                                showlegend=True,
+                            ), row=ri, col=1)
+                            if 'acceleration' in cn.lower():
+                                t3_fig.add_hline(y=0, line_color=SUB, line_dash='dot',
+                                                 line_width=0.8, row=ri, col=1)
+                            t3_fig.update_yaxes(
+                                title_text=f'{lbl}<br>({unit})',
+                                title_font={'size': 9, 'color': SUB},
+                                gridcolor=LINE, color=SUB, tickfont={'size': 8},
+                                row=ri, col=1,
+                            )
+                        for r in range(1, n3 + 1):
+                            t3_fig.update_xaxes(
+                                gridcolor=LINE, color=SUB, tickfont={'size': 9},
+                                showticklabels=(r == n3),
+                                title_text='시간 (분)' if r == n3 else '',
+                                title_font={'size': 10, 'color': SUB},
+                                row=r, col=1,
+                            )
+                        t3_fig.update_layout(
+                            height=80 + n3 * 130,
+                            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                            margin=dict(l=70, r=20, t=16, b=40),
+                            legend={'font': {'color': SUB, 'size': 10},
+                                    'bgcolor': 'rgba(0,0,0,0)',
+                                    'orientation': 'h', 'x': 0, 'y': 1.02},
+                        )
+                        st.plotly_chart(t3_fig, use_container_width=True,
+                                        config={'displayModeBar': False})
 
     # ── 상관관계 히트맵 ───────────────────────────────────────
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
@@ -658,87 +741,6 @@ elif page == "트립별 주행거리 예측":
             xaxis={'color': TXT},
         )
         st.plotly_chart(cmp, use_container_width=True, config={'displayModeBar': False})
-
-    # ── 중단: 동기화 시계열 4패널 ────────────────────────────
-    st.markdown('<div style="height:8px"></div>', unsafe_allow_html=True)
-    if t_col_name:
-        t_ser = pd.to_numeric(trip_df[t_col_name], errors='coerce') / 60  # 분 단위
-
-        # 사용 가능한 채널 탐색
-        accel_col = next((c for c in trip_df.columns
-                          if 'longitudinal acceleration' in c.lower()), None)
-        btemp_col = next((c for c in trip_df.columns
-                          if 'battery temperature' in c.lower()
-                          and 'max' not in c.lower()), None)
-        heat_col  = next((c for c in trip_df.columns
-                          if 'heating power can' in c.lower()), None)
-        throttle_col = next((c for c in trip_df.columns
-                              if 'throttle' in c.lower()), None)
-
-        # 패널 정의: (컬럼명, 한글 라벨, y축 단위, 색, fill여부)
-        panels_def = [
-            (v_col_name,   '속도',       'km/h', BMW_BLUE, 'rgba(28,105,212,0.15)', True),
-            (accel_col,    '종방향 가속도', 'm/s²', AMBER,   'rgba(255,176,0,0.10)',   False),
-            (soc_col_name, 'SoC',        '%',    GREEN,   'rgba(0,200,150,0.12)',   True),
-            (btemp_col,    '배터리 온도', '°C',   RED,     'rgba(232,64,64,0.10)',   False),
-        ]
-        panels = [(c, l, u, col, fc, fill) for c, l, u, col, fc, fill in panels_def
-                  if c and c in trip_df.columns]
-
-        if panels:
-            n_rows = len(panels)
-            row_h  = [1] * n_rows
-            sync_fig = make_subplots(
-                rows=n_rows, cols=1,
-                shared_xaxes=True,
-                row_heights=row_h,
-                vertical_spacing=0.04,
-            )
-
-            for r_idx, (col_name, label, unit, color, fill_color, do_fill) in enumerate(panels, 1):
-                y_ser = pd.to_numeric(trip_df[col_name], errors='coerce')
-                sync_fig.add_trace(
-                    go.Scatter(
-                        x=t_ser, y=y_ser, mode='lines', name=label,
-                        line={'color': color, 'width': 1.5},
-                        fill='tozeroy' if do_fill else 'none',
-                        fillcolor=fill_color if do_fill else None,
-                        showlegend=True,
-                    ),
-                    row=r_idx, col=1,
-                )
-                # 가속도 패널에 0 기준선
-                if 'acceleration' in col_name.lower() or 'accel' in col_name.lower():
-                    sync_fig.add_hline(y=0, line_color=SUB, line_dash='dot',
-                                       line_width=0.8, row=r_idx, col=1)
-                sync_fig.update_yaxes(
-                    title_text=f'{label}<br>({unit})',
-                    title_font={'size': 9, 'color': SUB},
-                    gridcolor=LINE, color=SUB, tickfont={'size': 8},
-                    row=r_idx, col=1,
-                )
-
-            for r in range(1, n_rows + 1):
-                is_bottom = (r == n_rows)
-                sync_fig.update_xaxes(
-                    gridcolor=LINE, color=SUB, tickfont={'size': 9},
-                    showticklabels=is_bottom,
-                    title_text='시간 (분)' if is_bottom else '',
-                    title_font={'size': 10, 'color': SUB},
-                    row=r, col=1,
-                )
-            sync_fig.update_layout(
-                height=80 + n_rows * 130,
-                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                margin=dict(l=70, r=20, t=16, b=40),
-                legend={
-                    'font': {'color': SUB, 'size': 10},
-                    'bgcolor': 'rgba(0,0,0,0)',
-                    'orientation': 'h', 'x': 0, 'y': 1.02,
-                },
-            )
-            st.plotly_chart(sync_fig, use_container_width=True,
-                            config={'displayModeBar': False})
 
     # ── 인사이트 ─────────────────────────────────────────────
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
@@ -1157,70 +1159,91 @@ elif page == "모델 분석":
 # ════════════════════════════════════════════════════════════════
 elif page == "변수 분석":
     st.markdown('<div class="bmw-title">변수 분석</div>', unsafe_allow_html=True)
-    st.markdown('<div class="bmw-sub">변수 중요도 · 변수 비중 · 주행 패턴 인사이트</div>',
+    st.markdown('<div class="bmw-sub">모델이 주행거리 예측에 어떤 변수를 얼마나 중요하게 사용하는지 한눈에 확인합니다</div>',
                 unsafe_allow_html=True)
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
-    col_l, col_r = st.columns([1.2, 1])
+    # ── Section 1 : 중요도 바차트 + 핵심 변수 카드 ───────────
+    fi_l, fi_r = st.columns([1.6, 1])
 
-    with col_l:
-        st.markdown('<div class="sec-head">변수 중요도 (상위 15개)</div>', unsafe_allow_html=True)
-        top15 = importance.head(15).iloc[::-1].copy()
-        labels15 = [META[f][0] if f in META else f.replace('_', ' ')
-                    for f in top15['Feature']]
-        max_imp = top15['Importance'].max()
-        colors_fi = [f'rgba(28,105,212,{0.45 + 0.55 * v / max_imp:.2f})'
-                     for v in top15['Importance']]
+    FEAT_MEANINGS = {
+        'Duration':                          '주행 시간이 길수록 더 먼 거리를 이동합니다',
+        'SOC_Consumed':                      '배터리 소모가 클수록 더 오랜 주행을 반영합니다',
+        'Battery_Temperature_std':           '배터리 온도 변동은 주행 강도를 나타냅니다',
+        'Velocity_mean':                     '평균 속도가 높을수록 주행 효율에 영향을 줍니다',
+        'Battery_Temperature_diff_max':      '배터리 온도 급변은 과부하 구간을 나타냅니다',
+        'Longitudinal_Acceleration_diff_std':'급격한 가감속 변화가 에너지 소모에 영향을 줍니다',
+        'Accel_abs_mean':                    '평균 가속도가 높을수록 역동적인 주행입니다',
+        'Velocity_diff_std':                 '속도 변화 편차가 크면 불규칙한 주행 패턴입니다',
+        'Longitudinal_Acceleration_std':     '종방향 가속 편차가 주행 안정성을 나타냅니다',
+        'Velocity_std':                      '속도 변동이 클수록 도심/교외 혼합 주행입니다',
+        'Heating_Power_CAN_std':             '난방 출력 변동은 외기온 변화에 따른 에너지 비용입니다',
+        'Heating_Power_CAN_mean':            '평균 난방 출력이 높을수록 배터리 소모가 커집니다',
+        'Battery_Current_std':               '배터리 전류 편차는 회생제동 빈도를 반영합니다',
+        'Battery_Power_mean':                '평균 배터리 출력이 주행 부하를 결정합니다',
+        'Accel_abs_std':                     '가속도 편차가 클수록 가감속이 불규칙합니다',
+        'Ambient_Temperature_std':           '외기온 변동이 클수록 에너지 관리가 어렵습니다',
+        'Velocity_max':                      '최고 속도가 높을수록 순간 전력 소모가 큽니다',
+        'Battery_Voltage_mean':              '평균 전압이 낮으면 배터리 방전 수준을 의미합니다',
+        'Accel_abs_max':                     '최대 가속도는 급가속 여부를 나타냅니다',
+        'Battery_State_of_Charge_End':       '종료 시 충전량이 높을수록 여유 주행이었습니다',
+    }
+
+    total_imp = importance['Importance'].sum()
+    max_imp   = importance['Importance'].max()
+
+    with fi_l:
+        st.markdown('<div class="sec-head">변수 중요도 (상위 10개)</div>', unsafe_allow_html=True)
+        top10 = importance.head(10).iloc[::-1].copy()
+        labels10 = [META[f][0] if f in META else f.replace('_', ' ')
+                    for f in top10['Feature']]
+        pct10    = top10['Importance'] / total_imp * 100
+        c10 = [f'rgba(28,105,212,{0.40 + 0.60 * v / max_imp:.2f})'
+               for v in top10['Importance']]
         fi_fig = go.Figure(go.Bar(
-            x=top15['Importance'], y=labels15, orientation='h',
-            marker_color=colors_fi,
-            text=[f'{v:.1f}' for v in top15['Importance']],
+            x=top10['Importance'], y=labels10, orientation='h',
+            marker_color=c10,
+            text=[f'{p:.1f}%' for p in pct10],
             textposition='outside', textfont={'color': SUB, 'size': 10},
         ))
         fi_fig.update_layout(
-            height=460, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-            margin=dict(l=10, r=60, t=10, b=10),
-            xaxis={'gridcolor': LINE, 'color': SUB, 'title': '중요도'},
+            height=380, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+            margin=dict(l=10, r=55, t=10, b=10),
+            xaxis={'gridcolor': LINE, 'color': SUB,
+                   'title': {'text': '중요도 점수', 'font': {'size': 10, 'color': SUB}}},
             yaxis={'color': TXT, 'tickfont': {'size': 11}},
         )
         st.plotly_chart(fi_fig, use_container_width=True, config={'displayModeBar': False})
 
-    with col_r:
-        st.markdown('<div class="sec-head">상위 5개 변수 비중</div>', unsafe_allow_html=True)
-        top5_imp = importance.head(5).copy()
-        top5_imp = pd.concat([top5_imp, pd.DataFrame([{
-            'Feature': '기타',
-            'Importance': importance['Importance'].iloc[5:].sum(),
-        }])], ignore_index=True)
-        pie_labels = [META[f][0] if f in META else f.replace('_', ' ')
-                      for f in top5_imp['Feature']]
-        pie_fig = go.Figure(go.Pie(
-            labels=pie_labels, values=top5_imp['Importance'], hole=0.45,
-            marker_colors=[BMW_BLUE, BMW_DARK, BMW_LIGHT, '#0d4a8a', '#3d7dca', LINE],
-            textfont={'color': TXT, 'size': 11},
-        ))
-        pie_fig.update_layout(
-            height=255, paper_bgcolor='rgba(0,0,0,0)',
-            margin=dict(l=0, r=0, t=10, b=0),
-            legend={'font': {'color': SUB, 'size': 10}},
-        )
-        st.plotly_chart(pie_fig, use_container_width=True, config={'displayModeBar': False})
-
-        st.markdown('<div class="sec-head" style="margin-top:4px">상위 변수 해석</div>',
-                    unsafe_allow_html=True)
-        for _, row_fi in importance.head(5).iterrows():
+    with fi_r:
+        st.markdown('<div class="sec-head">핵심 변수 TOP 3</div>', unsafe_allow_html=True)
+        card_colors = [BMW_BLUE, GREEN, AMBER]
+        for rank, (_, row_fi) in enumerate(importance.head(3).iterrows()):
             fname  = row_fi['Feature']
-            fimp   = row_fi['Importance']
             flabel = META[fname][0] if fname in META else fname.replace('_', ' ')
-            pct    = fimp / importance['Importance'].sum() * 100
-            st.markdown(
-                f'<div class="insight"><strong>{flabel}</strong> — '
-                f'중요도 <strong>{fimp:.1f}</strong> ({pct:.1f}%)</div>',
-                unsafe_allow_html=True)
+            pct    = row_fi['Importance'] / total_imp * 100
+            bar_w  = int(row_fi['Importance'] / max_imp * 100)
+            meaning = FEAT_MEANINGS.get(fname, '주행거리 예측의 핵심 변수입니다')
+            cc = card_colors[rank]
+            st.markdown(f"""
+            <div style="background:{PANEL};border-radius:10px;padding:14px 16px;
+                        border-left:4px solid {cc};margin-bottom:10px">
+              <div style="display:flex;justify-content:space-between;align-items:center;
+                          margin-bottom:6px">
+                <span style="color:{TXT};font-weight:700;font-size:.95rem">
+                  #{rank+1} {flabel}
+                </span>
+                <span style="color:{cc};font-weight:700;font-size:1.0rem">{pct:.1f}%</span>
+              </div>
+              <div style="background:#1E3A5F;border-radius:3px;height:6px;margin-bottom:8px">
+                <div style="width:{bar_w}%;background:{cc};border-radius:3px;height:6px"></div>
+              </div>
+              <div style="color:{SUB};font-size:.8rem">{meaning}</div>
+            </div>
+            """, unsafe_allow_html=True)
 
+    # ── Section 2 : 주행 패턴 산점도 + 속도구간 박스플롯 ────
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-
-    # ── 주행 패턴 인사이트 ────────────────────────────────────
     st.markdown('<div class="sec-head">주행 패턴 인사이트</div>', unsafe_allow_html=True)
     ins_l, ins_r = st.columns(2)
 
@@ -1230,20 +1253,24 @@ elif page == "변수 분석":
             sc2.add_trace(go.Scatter(
                 x=df['Velocity_mean'], y=df['Distance'], mode='markers',
                 marker={
-                    'color': df['SOC_Consumed'] * 100 if 'SOC_Consumed' in df.columns else BMW_BLUE,
+                    'color': df['SOC_Consumed'] * 100 if 'SOC_Consumed' in df.columns
+                             else BMW_BLUE,
                     'colorscale': [[0, '#0a2040'], [0.5, BMW_BLUE], [1, '#7ab8f5']],
-                    'size': 5, 'opacity': 0.65,
-                    'colorbar': {'title': 'SOC%', 'tickfont': {'color': SUB}},
+                    'size': 6, 'opacity': 0.70,
+                    'colorbar': {'title': {'text': 'SOC 소모(%)', 'font': {'color': SUB, 'size': 10}},
+                                 'tickfont': {'color': SUB, 'size': 9}},
                     'showscale': 'SOC_Consumed' in df.columns,
                 },
             ))
             sc2.update_layout(
-                title={'text': '평균 속도 vs 주행거리',
-                       'font': {'color': TXT, 'size': 13}, 'x': 0.03},
-                height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                margin=dict(l=10, r=10, t=40, b=10),
-                xaxis={'gridcolor': LINE, 'color': SUB, 'title': '평균 속도 (km/h)'},
-                yaxis={'gridcolor': LINE, 'color': SUB, 'title': '주행거리 (km)'},
+                title={'text': '평균 속도 vs 주행거리 (색: SOC 소모)',
+                       'font': {'color': TXT, 'size': 12}, 'x': 0.03},
+                height=320, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                margin=dict(l=10, r=80, t=42, b=42),
+                xaxis={'gridcolor': LINE, 'color': SUB,
+                       'title': {'text': '평균 속도 (km/h)', 'font': {'size': 10, 'color': SUB}}},
+                yaxis={'gridcolor': LINE, 'color': SUB,
+                       'title': {'text': '주행거리 (km)', 'font': {'size': 10, 'color': SUB}}},
                 showlegend=False,
             )
             st.plotly_chart(sc2, use_container_width=True, config={'displayModeBar': False})
@@ -1251,41 +1278,31 @@ elif page == "변수 분석":
     with ins_r:
         if 'Velocity_mean' in df.columns and 'Distance' in df.columns:
             bins = [0, 30, 50, 70, 90, 160]
-            labels_bin = ['0-30', '30-50', '50-70', '70-90', '90+']
+            labels_bin = ['0–30', '30–50', '50–70', '70–90', '90+']
             df_tmp = df.copy()
             df_tmp['속도구간'] = pd.cut(df_tmp['Velocity_mean'], bins=bins, labels=labels_bin)
-            box_colors = ['#0a2d5a', '#0e3d7a', BMW_BLUE, BMW_LIGHT, '#7ab8f5']
+            bx_palette = ['#0a2d5a', '#0e3d7a', BMW_BLUE, BMW_LIGHT, '#7ab8f5']
             box_fig = go.Figure()
             for i, grp in enumerate(labels_bin):
                 d = df_tmp[df_tmp['속도구간'] == grp]['Distance']
-                if len(d) > 0:
+                if len(d):
                     box_fig.add_trace(go.Box(
                         y=d, name=f'{grp} km/h',
-                        marker_color=box_colors[i % len(box_colors)],
-                        line_color=BMW_BLUE,
+                        marker_color=bx_palette[i % len(bx_palette)],
+                        line_color=BMW_LIGHT, boxmean=True,
                     ))
             box_fig.update_layout(
                 title={'text': '속도 구간별 주행거리 분포',
-                       'font': {'color': TXT, 'size': 13}, 'x': 0.03},
-                height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                margin=dict(l=10, r=10, t=40, b=10),
-                xaxis={'color': TXT, 'title': '속도 구간'},
-                yaxis={'gridcolor': LINE, 'color': SUB, 'title': '주행거리 (km)'},
+                       'font': {'color': TXT, 'size': 12}, 'x': 0.03},
+                height=320, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                margin=dict(l=10, r=10, t=42, b=42),
+                xaxis={'color': TXT,
+                       'title': {'text': '속도 구간 (km/h)', 'font': {'size': 10, 'color': SUB}}},
+                yaxis={'gridcolor': LINE, 'color': SUB,
+                       'title': {'text': '주행거리 (km)', 'font': {'size': 10, 'color': SUB}}},
                 showlegend=False,
             )
             st.plotly_chart(box_fig, use_container_width=True, config={'displayModeBar': False})
-
-    corr_v = df['Velocity_mean'].corr(df['Distance']) if 'Velocity_mean' in df.columns else 0
-    corr_d = df['Duration'].corr(df['Distance'])      if 'Duration'      in df.columns else 0
-    corr_s = df['SOC_Consumed'].corr(df['Distance'])  if 'SOC_Consumed'  in df.columns else 0
-    st.markdown(f"""
-    <div class="insight"><strong>속도 ↔ 거리</strong> 상관계수 {corr_v:.3f} —
-    {'강한 양의 상관. 빠를수록 먼 거리 주행.' if corr_v > 0.5 else '약한 상관.'}</div>
-    <div class="insight"><strong>주행시간 ↔ 거리</strong> 상관계수 {corr_d:.3f} —
-    {'주행시간이 가장 강한 결정 인자.' if corr_d > 0.7 else '상당한 관계.'}</div>
-    <div class="insight"><strong>SOC 소모 ↔ 거리</strong> 상관계수 {corr_s:.3f} —
-    {'배터리를 더 쓸수록 더 먼 거리 주행.' if corr_s > 0 else '음의 상관 — 비효율 구간 주의.'}</div>
-    """, unsafe_allow_html=True)
 
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
     st.caption('데이터: BMW i3 Battery & Heating Data in Real Driving Cycles (FTM, TU München)')
