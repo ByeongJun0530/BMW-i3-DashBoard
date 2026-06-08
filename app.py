@@ -397,8 +397,8 @@ with st.sidebar:
 
     page = st.radio(
         "페이지 선택",
-        ["🏠  개요 · 홈", "🚘  트립별 예측", "🔮  주행거리 예측",
-         "📊  모델 성능 분석", "🏆  모델 비교", "📈  데이터 인사이트", "🧠  변수 중요도"],
+        ["  개요 · 홈", "  트립별 예측", "  주행거리 예측",
+         "  모델 성능 분석", "  모델 비교", "  데이터 인사이트", "  변수 중요도"],
         label_visibility="collapsed",
     )
 
@@ -406,7 +406,7 @@ with st.sidebar:
 
     # 트립 선택 드롭다운 (트립 예측 페이지에서만)
     selected_trip = None
-    if page == "🚘  트립별 예측":
+    if page == "  트립별 예측":
         if trip_list:
             st.markdown(
                 f'<div style="color:{SUB};font-size:.82rem;font-weight:600;'
@@ -433,7 +433,7 @@ with st.sidebar:
 # ════════════════════════════════════════════════════════════════
 # PAGE 1 : 개요 · 홈
 # ════════════════════════════════════════════════════════════════
-if page == "🏠  개요 · 홈":
+if page == "  개요 · 홈":
     st.markdown('<div class="bmw-title">BMW i3 · EV 주행거리 예측</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="bmw-sub">BMW i3 실주행 데이터 · 주행거리(Distance) 예측</div>',
                 unsafe_allow_html=True)
@@ -455,7 +455,7 @@ if page == "🏠  개요 · 홈":
 
     col_l, col_r = st.columns([1.1, 1])
     with col_l:
-        st.markdown('<div class="sec-head"><span>📋</span>데이터 분포 요약</div>',
+        st.markdown('<div class="sec-head">데이터 분포 요약</div>',
                     unsafe_allow_html=True)
         sum_cols = ['Distance', 'Duration', 'Velocity_mean', 'SOC_Consumed']
         sum_cols = [c for c in sum_cols if c in df.columns]
@@ -480,7 +480,7 @@ if page == "🏠  개요 · 홈":
         """, unsafe_allow_html=True)
 
     with col_r:
-        st.markdown('<div class="sec-head"><span>📊</span>주행거리 분포</div>',
+        st.markdown('<div class="sec-head">주행거리 분포</div>',
                     unsafe_allow_html=True)
         if 'Distance' in df.columns:
             hist = go.Figure()
@@ -505,7 +505,7 @@ if page == "🏠  개요 · 홈":
 
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="sec-head"><span>🔗</span>주요 변수 상관관계</div>',
+    st.markdown('<div class="sec-head">주요 변수 상관관계</div>',
                 unsafe_allow_html=True)
     heat_cols = ['Distance', 'Duration', 'Velocity_mean', 'Velocity_max',
                  'SOC_Consumed', 'Accel_abs_mean', 'Battery_Power_mean',
@@ -533,8 +533,8 @@ if page == "🏠  개요 · 홈":
 # ════════════════════════════════════════════════════════════════
 # PAGE 2 : 트립별 예측
 # ════════════════════════════════════════════════════════════════
-elif page == "🚘  트립별 예측":
-    st.markdown('<div class="bmw-title">🚘 트립별 주행거리 예측</div>', unsafe_allow_html=True)
+elif page == "  트립별 예측":
+    st.markdown('<div class="bmw-title"> 트립별 주행거리 예측</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="bmw-sub">실제 트립 데이터를 로드하여 AI가 주행거리를 예측합니다 · 사이드바에서 트립을 선택하세요</div>',
                 unsafe_allow_html=True)
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
@@ -676,7 +676,7 @@ elif page == "🚘  트립별 예측":
 # PAGE 3 : 주행거리 예측 (슬라이더)
 # ════════════════════════════════════════════════════════════════
 elif page == "🔮  주행거리 예측":
-    st.markdown('<div class="bmw-title">🔮 주행거리 예측</div>', unsafe_allow_html=True)
+    st.markdown('<div class="bmw-title"> 주행거리 예측</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="bmw-sub">슬라이더로 주행 조건을 설정하면 AI가 주행거리를 실시간 예측합니다</div>',
                 unsafe_allow_html=True)
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
@@ -699,7 +699,7 @@ elif page == "🔮  주행거리 예측":
             tgt = c1 if i % 2 == 0 else c2
             inputs[feat] = tgt.slider(f'{label} ({unit})', lo, hi, default, step)
 
-        with st.expander('🔧 고급 변수 (나머지 모델 입력값)'):
+        with st.expander(' 고급 변수 (나머지 모델 입력값)'):
             for feat in cols:
                 if feat in PRIMARY:
                     continue
@@ -778,7 +778,7 @@ elif page == "🔮  주행거리 예측":
 
     col_a, col_b = st.columns(2)
     with col_a:
-        st.markdown('<div class="sec-head"><span>⚖️</span>모델 예측 vs 물리식 비교</div>',
+        st.markdown('<div class="sec-head">모델 예측 vs 물리식 비교</div>',
                     unsafe_allow_html=True)
         cmp_fig = go.Figure()
         cmp_fig.add_trace(go.Bar(
@@ -801,7 +801,7 @@ elif page == "🔮  주행거리 예측":
         st.plotly_chart(cmp_fig, use_container_width=True, config={'displayModeBar': False})
 
     with col_b:
-        st.markdown('<div class="sec-head"><span>💡</span>예측 인사이트</div>',
+        st.markdown('<div class="sec-head">예측 인사이트</div>',
                     unsafe_allow_html=True)
         st.markdown(f"""
         <div class="insight">
@@ -850,8 +850,8 @@ elif page == "🔮  주행거리 예측":
 # ════════════════════════════════════════════════════════════════
 # PAGE 4 : 모델 성능 분석
 # ════════════════════════════════════════════════════════════════
-elif page == "📊  모델 성능 분석":
-    st.markdown('<div class="bmw-title">📊 모델 성능 분석</div>', unsafe_allow_html=True)
+elif page == "  모델 성능 분석":
+    st.markdown('<div class="bmw-title"> 모델 성능 분석</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="bmw-sub">CatBoost 모델의 예측 정확도 · 잔차 분석 · 오차 분포</div>',
                 unsafe_allow_html=True)
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
@@ -877,7 +877,7 @@ elif page == "📊  모델 성능 분석":
     col_l, col_r = st.columns(2)
 
     with col_l:
-        st.markdown('<div class="sec-head"><span>🎯</span>예측값 vs 실제값</div>',
+        st.markdown('<div class="sec-head">예측값 vs 실제값</div>',
                     unsafe_allow_html=True)
         sc = go.Figure()
         sc.add_trace(go.Scatter(
@@ -907,7 +907,7 @@ elif page == "📊  모델 성능 분석":
         """, unsafe_allow_html=True)
 
     with col_r:
-        st.markdown('<div class="sec-head"><span>📉</span>잔차 분포</div>',
+        st.markdown('<div class="sec-head">잔차 분포</div>',
                     unsafe_allow_html=True)
         res_hist = go.Figure()
         res_hist.add_trace(go.Histogram(
@@ -933,7 +933,7 @@ elif page == "📊  모델 성능 분석":
 
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="sec-head"><span>📊</span>오차 누적 분포 (CDF)</div>',
+    st.markdown('<div class="sec-head">오차 누적 분포 (CDF)</div>',
                 unsafe_allow_html=True)
     abs_err = np.sort(np.abs(residuals))
     cdf = np.arange(1, len(abs_err) + 1) / len(abs_err)
@@ -968,7 +968,7 @@ elif page == "📊  모델 성능 분석":
 # PAGE 5 : 모델 비교
 # ════════════════════════════════════════════════════════════════
 elif page == "🏆  모델 비교":
-    st.markdown('<div class="bmw-title">🏆 모델 성능 비교</div>', unsafe_allow_html=True)
+    st.markdown('<div class="bmw-title"> 모델 성능 비교</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="bmw-sub">베이스라인 · Optuna · GridSearch 모델 성능 비교 분석</div>',
                 unsafe_allow_html=True)
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
@@ -977,7 +977,7 @@ elif page == "🏆  모델 비교":
 
     # ── 베이스라인 비교 ─────────────────────────────────────────
     if not df_base.empty:
-        st.markdown('<div class="sec-head"><span>📊</span>베이스라인 모델 비교 (AB통합 vs B만)</div>',
+        st.markdown('<div class="sec-head">베이스라인 모델 비교 (AB통합 vs B만)</div>',
                     unsafe_allow_html=True)
 
         # 노트북별 최고 R² 행 선택
@@ -993,7 +993,7 @@ elif page == "🏆  모델 비교":
         col_l, col_r = st.columns(2)
 
         with col_l:
-            st.markdown('<div class="sec-head"><span>📈</span>R² Score 비교</div>',
+            st.markdown('<div class="sec-head">R² Score 비교</div>',
                         unsafe_allow_html=True)
             r2_fig = go.Figure()
             for nb in notebooks:
@@ -1022,7 +1022,7 @@ elif page == "🏆  모델 비교":
             st.plotly_chart(r2_fig, use_container_width=True, config={'displayModeBar': False})
 
         with col_r:
-            st.markdown('<div class="sec-head"><span>📉</span>RMSE 비교 (낮을수록 좋음)</div>',
+            st.markdown('<div class="sec-head">RMSE 비교 (낮을수록 좋음)</div>',
                         unsafe_allow_html=True)
             rmse_fig = go.Figure()
             for nb in notebooks:
@@ -1064,7 +1064,7 @@ elif page == "🏆  모델 비교":
     # ── Optuna / GridSearch 비교 ─────────────────────────────────
     if not df_opt.empty:
         st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-        st.markdown('<div class="sec-head"><span>🔧</span>Optuna · GridSearch 튜닝 성능 비교</div>',
+        st.markdown('<div class="sec-head">Optuna · GridSearch 튜닝 성능 비교</div>',
                     unsafe_allow_html=True)
 
         df_rmse = df_opt[df_opt['RMSE_mean'].notna()].copy()
@@ -1115,7 +1115,7 @@ elif page == "🏆  모델 비교":
 # ════════════════════════════════════════════════════════════════
 # PAGE 6 : 데이터 인사이트
 # ════════════════════════════════════════════════════════════════
-elif page == "📈  데이터 인사이트":
+elif page == "  데이터 인사이트":
     st.markdown('<div class="bmw-title">📈 데이터 인사이트</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="bmw-sub">주행 패턴 분석 · 변수 간 관계 · 주행 조건별 효율</div>',
                 unsafe_allow_html=True)
@@ -1124,7 +1124,7 @@ elif page == "📈  데이터 인사이트":
     col_l, col_r = st.columns(2)
 
     with col_l:
-        st.markdown('<div class="sec-head"><span>⚡</span>평균 속도 vs 주행거리</div>',
+        st.markdown('<div class="sec-head">평균 속도 vs 주행거리</div>',
                     unsafe_allow_html=True)
         if 'Velocity_mean' in df.columns and 'Distance' in df.columns:
             sc2 = go.Figure()
@@ -1151,7 +1151,7 @@ elif page == "📈  데이터 인사이트":
             st.plotly_chart(sc2, use_container_width=True, config={'displayModeBar': False})
 
     with col_r:
-        st.markdown('<div class="sec-head"><span>⏱️</span>주행 시간 vs 주행거리</div>',
+        st.markdown('<div class="sec-head">주행 시간 vs 주행거리</div>',
                     unsafe_allow_html=True)
         if 'Duration' in df.columns and 'Distance' in df.columns:
             sc3 = go.Figure()
@@ -1172,7 +1172,7 @@ elif page == "📈  데이터 인사이트":
 
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="sec-head"><span>🚗</span>속도 구간별 주행거리 분포</div>',
+    st.markdown('<div class="sec-head">속도 구간별 주행거리 분포</div>',
                 unsafe_allow_html=True)
     if 'Velocity_mean' in df.columns and 'Distance' in df.columns:
         bins = [0, 30, 50, 70, 90, 160]
@@ -1204,7 +1204,7 @@ elif page == "📈  데이터 인사이트":
     corr_d = df['Duration'].corr(df['Distance'])      if 'Duration'      in df.columns else 0
     corr_s = df['SOC_Consumed'].corr(df['Distance'])  if 'SOC_Consumed'  in df.columns else 0
     st.markdown(f"""
-    <div class="sec-head"><span>💡</span>주요 인사이트</div>
+    <div class="sec-head">주요 인사이트</div>
     <div class="insight"><strong>속도 ↔ 거리</strong> 상관계수 {corr_v:.3f} —
     {'강한 양의 상관. 빠를수록 먼 거리를 주행합니다.' if corr_v > 0.5
      else '약한 상관. 속도보다 주행시간이 더 영향이 큽니다.'}</div>
@@ -1220,8 +1220,8 @@ elif page == "📈  데이터 인사이트":
 # ════════════════════════════════════════════════════════════════
 # PAGE 7 : 변수 중요도
 # ════════════════════════════════════════════════════════════════
-elif page == "🧠  변수 중요도":
-    st.markdown('<div class="bmw-title">🧠 변수 중요도</div>', unsafe_allow_html=True)
+elif page == "  변수 중요도":
+    st.markdown('<div class="bmw-title"> 변수 중요도</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="bmw-sub">CatBoost 피처 중요도 · 주요 변수별 주행거리 민감도 분석</div>',
                 unsafe_allow_html=True)
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
@@ -1229,7 +1229,7 @@ elif page == "🧠  변수 중요도":
     col_l, col_r = st.columns([1.2, 1])
 
     with col_l:
-        st.markdown('<div class="sec-head"><span>📊</span>피처 중요도 (상위 15개)</div>',
+        st.markdown('<div class="sec-head">피처 중요도 (상위 15개)</div>',
                     unsafe_allow_html=True)
         top15 = importance.head(15).iloc[::-1].copy()
         labels15 = [META[f][0] if f in META else f.replace('_', ' ')
@@ -1256,7 +1256,7 @@ elif page == "🧠  변수 중요도":
         st.plotly_chart(fi_fig, use_container_width=True, config={'displayModeBar': False})
 
     with col_r:
-        st.markdown('<div class="sec-head"><span>💡</span>상위 변수 해석</div>',
+        st.markdown('<div class="sec-head">상위 변수 해석</div>',
                     unsafe_allow_html=True)
         for _, row_fi in importance.head(5).iterrows():
             fname  = row_fi['Feature']
@@ -1295,7 +1295,7 @@ elif page == "🧠  변수 중요도":
 
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="sec-head"><span>📈</span>주요 변수 민감도 분석 (다른 조건 고정)</div>',
+    st.markdown('<div class="sec-head">주요 변수 민감도 분석 (다른 조건 고정)</div>',
                 unsafe_allow_html=True)
 
     top4_feats = [f for f in importance['Feature'].head(4) if f in META][:4]
