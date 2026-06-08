@@ -290,7 +290,8 @@ def load_model_comparison():
 
 
 # ── 페이지 설정 + CSS ────────────────────────────────────────────
-st.set_page_config(page_title='BMW i3 · EV Dashboard', page_icon='🚗', layout='wide')
+st.set_page_config(page_title='BMW i3 · EV Dashboard', page_icon='🚗',
+                   layout='wide', initial_sidebar_state='expanded')
 
 st.markdown(f"""
 <style>
