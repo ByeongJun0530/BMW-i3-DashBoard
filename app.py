@@ -439,8 +439,6 @@ if page == "개요 · 홈":
                 unsafe_allow_html=True)
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
-    st.markdown('<div style="height:20px"></div>', unsafe_allow_html=True)
-
     col_l, col_r = st.columns([1.1, 1])
     with col_l:
         st.markdown('<div class="sec-head">데이터 분포 요약</div>',
