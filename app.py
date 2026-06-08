@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 try:
     from catboost import CatBoostRegressor
@@ -658,53 +659,86 @@ elif page == "트립별 주행거리 예측":
         )
         st.plotly_chart(cmp, use_container_width=True, config={'displayModeBar': False})
 
-    # ── 중단: 속도 | SoC 프로파일 ────────────────────────────
+    # ── 중단: 동기화 시계열 4패널 ────────────────────────────
     st.markdown('<div style="height:8px"></div>', unsafe_allow_html=True)
-    if t_col_name and (v_col_name or soc_col_name):
-        prof_l, prof_r = st.columns(2)
-        t_ser = pd.to_numeric(trip_df[t_col_name], errors='coerce') if t_col_name else None
+    if t_col_name:
+        t_ser = pd.to_numeric(trip_df[t_col_name], errors='coerce') / 60  # 분 단위
 
-        with prof_l:
-            if v_col_name and t_ser is not None:
-                v_ser = pd.to_numeric(trip_df[v_col_name], errors='coerce')
-                vel_fig = go.Figure()
-                vel_fig.add_trace(go.Scatter(
-                    x=t_ser / 60, y=v_ser, mode='lines',
-                    line={'color': BMW_BLUE, 'width': 1.5},
-                    fill='tozeroy', fillcolor='rgba(28,105,212,0.15)',
-                ))
-                vel_fig.update_layout(
-                    title={'text': '속도 프로파일',
-                           'font': {'color': TXT, 'size': 13}, 'x': 0.03},
-                    height=250, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                    margin=dict(l=10, r=10, t=40, b=10),
-                    xaxis={'gridcolor': LINE, 'color': SUB, 'title': '시간 (분)'},
-                    yaxis={'gridcolor': LINE, 'color': SUB, 'title': '속도 (km/h)'},
-                    showlegend=False,
-                )
-                st.plotly_chart(vel_fig, use_container_width=True,
-                                config={'displayModeBar': False})
+        # 사용 가능한 채널 탐색
+        accel_col = next((c for c in trip_df.columns
+                          if 'longitudinal acceleration' in c.lower()), None)
+        btemp_col = next((c for c in trip_df.columns
+                          if 'battery temperature' in c.lower()
+                          and 'max' not in c.lower()), None)
+        heat_col  = next((c for c in trip_df.columns
+                          if 'heating power can' in c.lower()), None)
+        throttle_col = next((c for c in trip_df.columns
+                              if 'throttle' in c.lower()), None)
 
-        with prof_r:
-            if soc_col_name and t_ser is not None:
-                soc_ser = pd.to_numeric(trip_df[soc_col_name], errors='coerce')
-                soc_fig = go.Figure()
-                soc_fig.add_trace(go.Scatter(
-                    x=t_ser / 60, y=soc_ser, mode='lines',
-                    line={'color': GREEN, 'width': 1.5},
-                    fill='tozeroy', fillcolor='rgba(0,200,150,0.12)',
-                ))
-                soc_fig.update_layout(
-                    title={'text': 'SoC 프로파일',
-                           'font': {'color': TXT, 'size': 13}, 'x': 0.03},
-                    height=250, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                    margin=dict(l=10, r=10, t=40, b=10),
-                    xaxis={'gridcolor': LINE, 'color': SUB, 'title': '시간 (분)'},
-                    yaxis={'gridcolor': LINE, 'color': SUB, 'title': 'SoC (%)'},
-                    showlegend=False,
+        # 패널 정의: (컬럼명, 한글 라벨, y축 단위, 색, fill여부)
+        panels_def = [
+            (v_col_name,   '속도',       'km/h', BMW_BLUE, 'rgba(28,105,212,0.15)', True),
+            (accel_col,    '종방향 가속도', 'm/s²', AMBER,   'rgba(255,176,0,0.10)',   False),
+            (soc_col_name, 'SoC',        '%',    GREEN,   'rgba(0,200,150,0.12)',   True),
+            (btemp_col,    '배터리 온도', '°C',   RED,     'rgba(232,64,64,0.10)',   False),
+        ]
+        panels = [(c, l, u, col, fc, fill) for c, l, u, col, fc, fill in panels_def
+                  if c and c in trip_df.columns]
+
+        if panels:
+            n_rows = len(panels)
+            row_h  = [1] * n_rows
+            sync_fig = make_subplots(
+                rows=n_rows, cols=1,
+                shared_xaxes=True,
+                row_heights=row_h,
+                vertical_spacing=0.04,
+            )
+
+            for r_idx, (col_name, label, unit, color, fill_color, do_fill) in enumerate(panels, 1):
+                y_ser = pd.to_numeric(trip_df[col_name], errors='coerce')
+                sync_fig.add_trace(
+                    go.Scatter(
+                        x=t_ser, y=y_ser, mode='lines', name=label,
+                        line={'color': color, 'width': 1.5},
+                        fill='tozeroy' if do_fill else 'none',
+                        fillcolor=fill_color if do_fill else None,
+                        showlegend=True,
+                    ),
+                    row=r_idx, col=1,
                 )
-                st.plotly_chart(soc_fig, use_container_width=True,
-                                config={'displayModeBar': False})
+                # 가속도 패널에 0 기준선
+                if 'acceleration' in col_name.lower() or 'accel' in col_name.lower():
+                    sync_fig.add_hline(y=0, line_color=SUB, line_dash='dot',
+                                       line_width=0.8, row=r_idx, col=1)
+                sync_fig.update_yaxes(
+                    title_text=f'{label}<br>({unit})',
+                    title_font={'size': 9, 'color': SUB},
+                    gridcolor=LINE, color=SUB, tickfont={'size': 8},
+                    row=r_idx, col=1,
+                )
+
+            for r in range(1, n_rows + 1):
+                is_bottom = (r == n_rows)
+                sync_fig.update_xaxes(
+                    gridcolor=LINE, color=SUB, tickfont={'size': 9},
+                    showticklabels=is_bottom,
+                    title_text='시간 (분)' if is_bottom else '',
+                    title_font={'size': 10, 'color': SUB},
+                    row=r, col=1,
+                )
+            sync_fig.update_layout(
+                height=80 + n_rows * 130,
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                margin=dict(l=70, r=20, t=16, b=40),
+                legend={
+                    'font': {'color': SUB, 'size': 10},
+                    'bgcolor': 'rgba(0,0,0,0)',
+                    'orientation': 'h', 'x': 0, 'y': 1.02,
+                },
+            )
+            st.plotly_chart(sync_fig, use_container_width=True,
+                            config={'displayModeBar': False})
 
     # ── 인사이트 ─────────────────────────────────────────────
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
