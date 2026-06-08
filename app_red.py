@@ -60,12 +60,12 @@ PRIMARY = ['Velocity_mean', 'Velocity_max', 'Duration', 'SOC_Consumed',
 F1_RED      = '#E8002D'
 F1_DARK     = '#8B0000'
 F1_LIGHT    = '#FF6B6B'
-DARK        = '#0D0000'
-PANEL       = '#1A0404'
-PANEL2      = '#220606'
-LINE        = '#3D1010'
+DARK        = '#0A0A0A'
+PANEL       = '#141414'
+PANEL2      = '#1C1C1C'
+LINE        = '#2A2A2A'
 TXT         = '#FFFFFF'
-SUB         = '#E0A8A8'
+SUB         = '#AAAAAA'
 GREEN       = '#00C896'
 AMBER       = '#FFB000'
 RED         = '#FF4444'
@@ -151,7 +151,7 @@ st.markdown(f"""
  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
  .stApp {{
-   background: linear-gradient(160deg, #0D0000 0%, #150000 50%, #0A0000 100%) fixed;
+   background: linear-gradient(160deg, #0A0A0A 0%, #111111 50%, #0A0A0A 100%) fixed;
    color:{TXT}; font-family:'Inter',sans-serif;
  }}
  #MainMenu, footer, header {{ visibility:hidden; }}
@@ -159,7 +159,7 @@ st.markdown(f"""
 
  /* 사이드바 */
  [data-testid=stSidebar] {{
-   background: linear-gradient(180deg, #120000 0%, #1A0404 100%);
+   background: linear-gradient(180deg, #0A0A0A 0%, #141414 100%);
    border-right: 1px solid {LINE};
  }}
  [data-testid=stSidebar] .stRadio label {{
@@ -181,7 +181,7 @@ st.markdown(f"""
    padding:18px 20px;
  }}
  .card-blue {{
-   background: linear-gradient(135deg, {PANEL} 0%, #2d0d0d 100%);
+   background: linear-gradient(135deg, {PANEL} 0%, #1a0000 100%);
    border:1px solid {F1_RED};
  }}
 
@@ -194,12 +194,12 @@ st.markdown(f"""
 
  /* 예측 결과 */
  .pred-box {{
-   background: linear-gradient(135deg, #2d0d0d 0%, #8B0000 100%);
+   background: linear-gradient(135deg, #100000 0%, #1e0000 100%);
    border:2px solid {F1_RED}; border-radius:16px;
    padding:28px; text-align:center;
  }}
  .pred-num {{
-   font-size:4.2rem; font-weight:700; color:#fff; line-height:1;
+   font-size:4.2rem; font-weight:700; color:{F1_RED}; line-height:1;
  }}
  .pred-unit {{ font-size:1.3rem; color:{SUB}; vertical-align:super; }}
  .pred-label {{
@@ -236,7 +236,7 @@ st.markdown(f"""
 
  /* insight 박스 */
  .insight {{
-   background: linear-gradient(135deg, #200808 0%, {PANEL} 100%);
+   background: linear-gradient(135deg, #1a0000 0%, {PANEL} 100%);
    border-left:3px solid {F1_RED}; border-radius:0 8px 8px 0;
    padding:10px 14px; margin:8px 0; font-size:.88rem; color:{SUB};
  }}
@@ -369,7 +369,7 @@ if page == "🏠  개요 · 홈":
 
     heat = go.Figure(go.Heatmap(
         z=corr.values, x=labels, y=labels,
-        colorscale=[[0, '#1a0000'], [0.5, F1_RED], [1, '#ffffff']],
+        colorscale=[[0, '#0a0a0a'], [0.5, F1_RED], [1, '#ffffff']],
         zmin=-1, zmax=1, text=corr.values, texttemplate='%{text}',
         textfont={'size': 10}, hoverongaps=False,
     ))
@@ -459,9 +459,9 @@ elif page == "🔮  주행거리 예측":
                 'bar': {'color': F1_RED, 'thickness': 0.3},
                 'bgcolor': PANEL2, 'borderwidth': 0,
                 'steps': [
-                    {'range': [0, 40],  'color': '#200000'},
-                    {'range': [40, 75], 'color': '#2d0000'},
-                    {'range': [75, 110],'color': '#3d0000'}],
+                    {'range': [0, 40],  'color': '#1a2800'},
+                    {'range': [40, 75], 'color': '#2a2000'},
+                    {'range': [75, 110],'color': '#3a0a00'}],
                 'threshold': {
                     'line': {'color': AMBER, 'width': 3},
                     'thickness': 0.8,
@@ -729,7 +729,7 @@ elif page == "📈  데이터 인사이트":
                 marker={
                     'color': df['SOC_Consumed'] * 100 if 'SOC_Consumed' in df.columns
                              else F1_RED,
-                    'colorscale': [[0, '#200000'], [0.5, F1_RED], [1, '#ff9999']],
+                    'colorscale': [[0, '#0a0a0a'], [0.5, F1_RED], [1, '#ff9999']],
                     'size': 5, 'opacity': 0.65,
                     'colorbar': {'title': 'SOC%', 'tickfont': {'color': SUB}},
                     'showscale': 'SOC_Consumed' in df.columns,
@@ -774,7 +774,7 @@ elif page == "📈  데이터 인사이트":
         bins = [0, 30, 50, 70, 90, 160]
         labels_bin = ['0-30', '30-50', '50-70', '70-90', '90+']
         df['속도구간'] = pd.cut(df['Velocity_mean'], bins=bins, labels=labels_bin)
-        box_colors = ['#3d0000', '#5a0000', F1_RED, F1_LIGHT, '#ff9999']
+        box_colors = ['#1a1a1a', '#2a1000', F1_RED, F1_LIGHT, '#ff9999']
         box_fig = go.Figure()
         for i, grp in enumerate(labels_bin):
             d = df[df['속도구간'] == grp]['Distance']
