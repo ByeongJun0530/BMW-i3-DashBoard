@@ -439,18 +439,6 @@ if page == "개요 · 홈":
                 unsafe_allow_html=True)
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
-    k1, k2, k3, k4 = st.columns(4)
-    r2c = GREEN if metrics['R2'] >= 0.8 else AMBER
-    for col, val, lab in [
-        (k1, f"{metrics['R2']:.3f}", "모델 R²"),
-        (k2, f"{metrics['MAE']:.1f} km", "평균 오차 (MAE)"),
-        (k3, f"{metrics['RMSE']:.1f} km", "RMSE"),
-        (k4, f"{metrics['n']}건", "학습 데이터"),
-    ]:
-        col.markdown(
-            f'<div class="kpi"><div class="v">{val}</div><div class="l">{lab}</div></div>',
-            unsafe_allow_html=True)
-
     st.markdown('<div style="height:20px"></div>', unsafe_allow_html=True)
 
     col_l, col_r = st.columns([1.1, 1])
