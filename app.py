@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 try:
     from catboost import CatBoostRegressor
@@ -56,22 +57,20 @@ PRIMARY = ['Velocity_mean', 'Velocity_max', 'Duration', 'SOC_Consumed',
            'Accel_abs_mean', 'Heating_Power_CAN_mean', 'Battery_Power_mean',
            'Battery_Temperature_std']
 
-# ── BMW 컬러 팔레트 ──────────────────────────────────────────────
-BMW_BLUE    = '#1C69D4'
-BMW_DARK    = '#0A3D91'
-BMW_LIGHT   = '#5B9BD5'
-DARK        = '#0B1929'
-PANEL       = '#0F2440'
-PANEL2      = '#162d50'
-LINE        = '#1E3A5F'
-TXT         = '#FFFFFF'
-SUB         = '#A8C4E0'
-GREEN       = '#00C896'
-AMBER       = '#FFB000'
-RED         = '#E84040'
+BMW_BLUE  = '#1C69D4'
+BMW_DARK  = '#0A3D91'
+BMW_LIGHT = '#5B9BD5'
+DARK      = '#0B1929'
+PANEL     = '#0F2440'
+PANEL2    = '#162d50'
+LINE      = '#1E3A5F'
+TXT       = '#FFFFFF'
+SUB       = '#A8C4E0'
+GREEN     = '#00C896'
+AMBER     = '#FFB000'
+RED       = '#E84040'
 
 
-# ── 집계 데이터 ──────────────────────────────────────────────────
 @st.cache_data(show_spinner=False)
 def make_synthetic(n=500, seed=42):
     rng = np.random.default_rng(seed)
@@ -143,7 +142,6 @@ def train_model(df_key, df):
     return model, metrics, importance, cols, df[cols].median()
 
 
-# ── 트립 데이터 로드 ────────────────────────────────────────────
 @st.cache_data(show_spinner=False)
 def load_trip_list():
     data_dir = 'data'
@@ -167,7 +165,6 @@ def load_trip_raw(filename):
 
 
 def _get_col(df, keywords, exclude=None):
-    """컬럼명에서 keyword 포함 & exclude 미포함인 첫 번째 컬럼 반환."""
     exclude = [e.lower() for e in (exclude or [])]
     for c in df.columns:
         cl = c.lower()
@@ -179,80 +176,61 @@ def _get_col(df, keywords, exclude=None):
 
 
 def compute_trip_features(df):
-    """원시 트립 CSV에서 모델 입력 피처와 실제 주행거리 계산."""
     def safe(s, default=0.0):
         return s if s is not None else pd.Series([default] * len(df))
 
-    t  = safe(_get_col(df, ['time [s]', 'time']), 0.0)
-    v  = safe(_get_col(df, ['velocity']), 0.0)
-    a  = safe(_get_col(df, ['longitudinal acceleration']), 0.0)
-    bt = safe(_get_col(df, ['battery temperature'],
-                       exclude=['max', 'min', 'coolant', 'exchanger', 'heater', 'cabin', 'inlet']), 20.0)
-    soc = safe(_get_col(df, ['soc [%]'],
-                        exclude=['max', 'min', 'displayed']), 50.0)
-    ht = safe(_get_col(df, ['heating power can']), 0.0)
-    bc = safe(_get_col(df, ['battery current']), 0.0)
-    bv = safe(_get_col(df, ['battery voltage']), 370.0)
-    at = safe(_get_col(df, ['ambient temperature']), 15.0)
+    t   = safe(_get_col(df, ['time [s]', 'time']), 0.0)
+    v   = safe(_get_col(df, ['velocity']), 0.0)
+    a   = safe(_get_col(df, ['longitudinal acceleration']), 0.0)
+    bt  = safe(_get_col(df, ['battery temperature'],
+                        exclude=['max', 'min', 'coolant', 'exchanger', 'heater', 'cabin', 'inlet']), 20.0)
+    soc = safe(_get_col(df, ['soc [%]'], exclude=['max', 'min', 'displayed']), 50.0)
+    ht  = safe(_get_col(df, ['heating power can']), 0.0)
+    bc  = safe(_get_col(df, ['battery current']), 0.0)
+    bv  = safe(_get_col(df, ['battery voltage']), 370.0)
+    at  = safe(_get_col(df, ['ambient temperature']), 15.0)
 
-    dur           = float((t.max() - t.min()) / 60)
-    vel_mean      = float(v.mean())
-    vel_std       = float(v.std())
-    vel_max       = float(v.max())
-    vel_diff_std  = float(v.diff().std())
-
-    a_abs             = a.abs()
-    accel_abs_mean    = float(a_abs.mean())
-    accel_abs_std     = float(a_abs.std())
-    accel_abs_max     = float(a_abs.max())
-    accel_std         = float(a.std())
-    accel_diff_std    = float(a.diff().std())
-
+    dur            = float((t.max() - t.min()) / 60)
+    vel_mean       = float(v.mean())
+    vel_std        = float(v.std())
+    vel_max        = float(v.max())
+    vel_diff_std   = float(v.diff().std())
+    a_abs          = a.abs()
+    accel_abs_mean = float(a_abs.mean())
+    accel_abs_std  = float(a_abs.std())
+    accel_abs_max  = float(a_abs.max())
+    accel_std      = float(a.std())
+    accel_diff_std = float(a.diff().std())
     batt_temp_std      = float(bt.std())
     batt_temp_diff_max = float(bt.diff().abs().max()) if len(bt) > 1 else 0.0
-
-    soc_start    = float(soc.dropna().iloc[0]) if len(soc.dropna()) > 0 else 50.0
+    soc_start    = float(soc.dropna().iloc[0])  if len(soc.dropna()) > 0 else 50.0
     soc_end_val  = float(soc.dropna().iloc[-1]) if len(soc.dropna()) > 0 else 40.0
     soc_consumed = max(0.0, (soc_start - soc_end_val) / 100)
     soc_end      = soc_end_val / 100
-
-    heat_mean = float(ht.mean())
-    heat_std  = float(ht.std())
-
+    heat_mean = float(ht.mean()); heat_std = float(ht.std())
     batt_curr_std   = float(bc.std())
     batt_volt_mean  = float(bv.mean())
     batt_power_mean = float((bv * bc / 1000).mean())
     amb_temp_std    = float(at.std())
-
     dt = t.diff().fillna(0.0)
     actual_dist = float((v * dt / 3600).sum())
 
     feats = {
-        'Duration':                              dur,
-        'SOC_Consumed':                          soc_consumed,
-        'Battery_Temperature_std':               batt_temp_std,
-        'Velocity_mean':                         vel_mean,
-        'Battery_Temperature_diff_max':          batt_temp_diff_max,
-        'Longitudinal_Acceleration_diff_std':    accel_diff_std,
-        'Accel_abs_mean':                        accel_abs_mean,
-        'Velocity_diff_std':                     vel_diff_std,
-        'Longitudinal_Acceleration_std':         accel_std,
-        'Velocity_std':                          vel_std,
-        'Battery_State_of_Charge_End':           soc_end,
-        'Heating_Power_CAN_std':                 heat_std,
-        'Heating_Power_CAN_mean':                heat_mean,
-        'Accel_abs_std':                         accel_abs_std,
-        'Battery_Current_std':                   batt_curr_std,
-        'Battery_Power_mean':                    batt_power_mean,
-        'Accel_abs_max':                         accel_abs_max,
-        'Ambient_Temperature_std':               amb_temp_std,
-        'Velocity_max':                          vel_max,
-        'Battery_Voltage_mean':                  batt_volt_mean,
+        'Duration': dur, 'SOC_Consumed': soc_consumed,
+        'Battery_Temperature_std': batt_temp_std, 'Velocity_mean': vel_mean,
+        'Battery_Temperature_diff_max': batt_temp_diff_max,
+        'Longitudinal_Acceleration_diff_std': accel_diff_std,
+        'Accel_abs_mean': accel_abs_mean, 'Velocity_diff_std': vel_diff_std,
+        'Longitudinal_Acceleration_std': accel_std, 'Velocity_std': vel_std,
+        'Battery_State_of_Charge_End': soc_end, 'Heating_Power_CAN_std': heat_std,
+        'Heating_Power_CAN_mean': heat_mean, 'Accel_abs_std': accel_abs_std,
+        'Battery_Current_std': batt_curr_std, 'Battery_Power_mean': batt_power_mean,
+        'Accel_abs_max': accel_abs_max, 'Ambient_Temperature_std': amb_temp_std,
+        'Velocity_max': vel_max, 'Battery_Voltage_mean': batt_volt_mean,
     }
     return feats, actual_dist, soc_start, soc_end_val
 
 
-# ── 모델 비교 데이터 ─────────────────────────────────────────────
 @st.cache_data(show_spinner=False)
 def load_model_comparison():
     base_path = os.path.join('model comparison', 'baseline_model_comparison.csv')
@@ -262,7 +240,7 @@ def load_model_comparison():
     return df_base, df_opt
 
 
-# ── 페이지 설정 + BMW CSS ────────────────────────────────────────
+# ── 페이지 설정 + CSS ────────────────────────────────────────────
 st.set_page_config(page_title='BMW i3 · EV Dashboard', page_icon='🚗', layout='wide')
 
 st.markdown(f"""
@@ -276,84 +254,64 @@ st.markdown(f"""
  #MainMenu, footer, header {{ visibility:hidden; }}
  .block-container {{ padding-top:1.5rem; max-width:1440px; }}
 
- /* 사이드바 */
- [data-testid=stSidebar] {{
+ /* 사이드바 배경 */
+ section[data-testid="stSidebar"] {{
    background: linear-gradient(180deg, #0A1E35 0%, #0D2441 100%);
    border-right: 1px solid {LINE};
  }}
- [data-testid=stSidebar] .stRadio label {{
-   color:{TXT} !important; font-size:.95rem; font-weight:500;
+ /* 사이드바 텍스트 — 모든 라벨/단락/span 강제 흰색 */
+ section[data-testid="stSidebar"] label,
+ section[data-testid="stSidebar"] label p,
+ section[data-testid="stSidebar"] label span,
+ section[data-testid="stSidebar"] .stRadio label,
+ section[data-testid="stSidebar"] .stRadio label p,
+ section[data-testid="stSidebar"] div[role="radiogroup"] label {{
+   color: {TXT} !important;
+   font-size: .95rem !important;
+   font-weight: 500 !important;
+ }}
+ section[data-testid="stSidebar"] .stCaption,
+ section[data-testid="stSidebar"] small {{
+   color: {SUB} !important;
  }}
 
- /* 타이틀 */
  .bmw-title {{
    font-weight:700; font-size:2rem; letter-spacing:.5px; color:{TXT};
    border-left:5px solid {BMW_BLUE}; padding-left:16px; line-height:1.2;
  }}
- .bmw-sub {{
-   color:{SUB}; font-size:.9rem; padding-left:21px; margin-top:2px;
- }}
+ .bmw-sub {{ color:{SUB}; font-size:.9rem; padding-left:21px; margin-top:2px; }}
 
- /* 카드 */
- .card {{
-   background:{PANEL}; border:1px solid {LINE}; border-radius:12px;
-   padding:18px 20px;
- }}
- .card-blue {{
-   background: linear-gradient(135deg, {PANEL} 0%, #0d2d52 100%);
-   border:1px solid {BMW_BLUE};
- }}
+ .card {{ background:{PANEL}; border:1px solid {LINE}; border-radius:12px; padding:18px 20px; }}
 
- /* KPI */
  .kpi {{ text-align:center; background:{PANEL}; border:1px solid {LINE};
    border-radius:10px; padding:14px 10px; }}
  .kpi .v {{ font-size:1.7rem; font-weight:700; color:{TXT}; }}
  .kpi .l {{ color:{SUB}; font-size:.75rem; letter-spacing:1.5px;
    text-transform:uppercase; margin-top:2px; }}
 
- /* 예측 결과 */
  .pred-box {{
    background: linear-gradient(135deg, #0d2d52 0%, #0A3D91 100%);
-   border:2px solid {BMW_BLUE}; border-radius:16px;
-   padding:28px; text-align:center;
+   border:2px solid {BMW_BLUE}; border-radius:16px; padding:28px; text-align:center;
  }}
- .pred-num {{
-   font-size:4.2rem; font-weight:700; color:#fff; line-height:1;
- }}
+ .pred-num {{ font-size:4.2rem; font-weight:700; color:#fff; line-height:1; }}
  .pred-unit {{ font-size:1.3rem; color:{SUB}; vertical-align:super; }}
- .pred-label {{
-   color:{BMW_LIGHT}; font-size:.85rem; letter-spacing:2px;
-   text-transform:uppercase; margin-top:8px;
- }}
+ .pred-label {{ color:{BMW_LIGHT}; font-size:.85rem; letter-spacing:2px;
+   text-transform:uppercase; margin-top:8px; }}
 
- /* 구분선 */
  .divider {{ height:1px; background: linear-gradient(90deg,
-   transparent, {LINE} 20%, {LINE} 80%, transparent);
-   margin:20px 0; }}
+   transparent, {LINE} 20%, {LINE} 80%, transparent); margin:20px 0; }}
 
- /* 슬라이더 */
  .stSlider label {{ color:{TXT} !important; font-weight:500; }}
- .stSlider [data-baseweb=slider] div[role=slider] {{ background:{BMW_BLUE}; }}
-
- /* 버튼 */
- .stButton>button {{
-   background:{BMW_BLUE}; color:#fff; border:0; border-radius:8px;
-   font-weight:600; padding:.55rem 1.4rem;
- }}
+ .stButton>button {{ background:{BMW_BLUE}; color:#fff; border:0; border-radius:8px;
+   font-weight:600; padding:.55rem 1.4rem; }}
  .stButton>button:hover {{ background:{BMW_DARK}; }}
 
- /* 뱃지 */
  .badge {{ display:inline-block; padding:3px 10px; border-radius:20px;
    font-size:.75rem; font-weight:600; letter-spacing:.5px; }}
 
- /* 섹션 헤더 */
- .sec-head {{
-   font-size:1.1rem; font-weight:600; color:{TXT}; margin-bottom:12px;
-   padding-bottom:8px; border-bottom:1px solid {LINE};
- }}
- .sec-head span {{ color:{BMW_BLUE}; margin-right:6px; }}
+ .sec-head {{ font-size:1.1rem; font-weight:600; color:{TXT}; margin-bottom:12px;
+   padding-bottom:8px; border-bottom:1px solid {LINE}; }}
 
- /* insight 박스 */
  .insight {{
    background: linear-gradient(135deg, #0d2448 0%, {PANEL} 100%);
    border-left:3px solid {BMW_BLUE}; border-radius:0 8px 8px 0;
@@ -364,13 +322,11 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 
-# ── 데이터 & 모델 로딩 ───────────────────────────────────────────
+# ── 데이터 & 모델 ────────────────────────────────────────────────
 df, source = load_data()
 model, metrics, importance, cols, medians = train_model(source + str(len(df)), df)
 trip_list = load_trip_list()
 
-
-# ── 사이드바 네비게이션 ──────────────────────────────────────────
 BMW_LOGO_SVG = """
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="32" height="32" style="vertical-align:middle;margin-right:8px">
   <circle cx="50" cy="50" r="49" fill="#1a1a1a"/>
@@ -384,6 +340,7 @@ BMW_LOGO_SVG = """
 </svg>
 """
 
+# ── 사이드바 ─────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown(f"""
     <div style="padding:16px 0 8px 0">
@@ -397,14 +354,12 @@ with st.sidebar:
 
     page = st.radio(
         "페이지 선택",
-        ["개요 · 홈", "트립별 예측", "주행거리 예측",
-         "모델 성능 분석", "모델 비교", "데이터 인사이트", "변수 중요도"],
+        ["개요 · 홈", "트립별 예측", "주행거리 예측", "모델 분석", "변수 분석"],
         label_visibility="collapsed",
     )
 
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
-    # 트립 선택 드롭다운 (트립 예측 페이지에서만)
     selected_trip = None
     if page == "트립별 예측":
         if trip_list:
@@ -412,22 +367,18 @@ with st.sidebar:
                 f'<div style="color:{SUB};font-size:.82rem;font-weight:600;'
                 f'letter-spacing:.5px;margin-bottom:6px">트립 선택</div>',
                 unsafe_allow_html=True)
-            selected_trip = st.selectbox(
-                "trip", trip_list, label_visibility='collapsed')
+            selected_trip = st.selectbox("trip", trip_list, label_visibility='collapsed')
         else:
             st.warning('data/ 폴더에 트립 파일이 없습니다.')
 
-    # 데이터 상태 뱃지
-    if source == 'real':
-        badge_html = f'<span class="badge" style="background:{GREEN};color:#000">● 실데이터</span>'
-    else:
-        badge_html = f'<span class="badge" style="background:{AMBER};color:#000">● 데모(합성) 데이터</span>'
+    badge_html = (f'<span class="badge" style="background:{GREEN};color:#000">● 실데이터</span>'
+                  if source == 'real' else
+                  f'<span class="badge" style="background:{AMBER};color:#000">● 데모(합성)</span>')
     st.markdown(badge_html, unsafe_allow_html=True)
-
     eng = 'CatBoost' if HAS_CATBOOST else 'GradientBoosting'
     st.caption(f'엔진: {eng}  ·  샘플: {len(df)}건')
     if trip_list:
-        st.caption(f'트립 데이터: {len(trip_list)}개')
+        st.caption(f'트립 파일: {len(trip_list)}개')
 
 
 # ════════════════════════════════════════════════════════════════
@@ -435,73 +386,90 @@ with st.sidebar:
 # ════════════════════════════════════════════════════════════════
 if page == "개요 · 홈":
     st.markdown('<div class="bmw-title">BMW i3 · EV 주행거리 예측</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="bmw-sub">BMW i3 실주행 데이터 · 주행거리(Distance) 예측</div>',
+    st.markdown('<div class="bmw-sub">BMW i3 실주행 데이터 기반 주행거리 예측 대시보드</div>',
                 unsafe_allow_html=True)
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
-    col_l, col_r = st.columns([1.1, 1])
-    with col_l:
-        st.markdown('<div class="sec-head">데이터 분포 요약</div>',
-                    unsafe_allow_html=True)
-        sum_cols = ['Distance', 'Duration', 'Velocity_mean', 'SOC_Consumed']
-        sum_cols = [c for c in sum_cols if c in df.columns]
-        desc = df[sum_cols].describe().loc[['mean', 'std', 'min', '50%', 'max']].round(2)
-        desc.index = ['평균', '표준편차', '최솟값', '중앙값', '최댓값']
-        rename_map = {
-            'Distance': '주행거리(km)', 'Duration': '주행시간(min)',
-            'Velocity_mean': '평균속도(km/h)', 'SOC_Consumed': 'SOC 소모',
-        }
-        desc.rename(columns=rename_map, inplace=True)
-        st.dataframe(desc, use_container_width=True)
+    # ── KPI 카드 ─────────────────────────────────────────────
+    k1, k2, k3, k4, k5 = st.columns(5)
+    dist_mean = df['Distance'].mean()    if 'Distance'      in df.columns else 0
+    dur_mean  = df['Duration'].mean()    if 'Duration'      in df.columns else 0
+    vel_mean  = df['Velocity_mean'].mean() if 'Velocity_mean' in df.columns else 0
+    soc_mean  = df['SOC_Consumed'].mean() * 100 if 'SOC_Consumed' in df.columns else 0
+    r2c = GREEN if metrics['R2'] >= 0.8 else AMBER
+    for c_, val, lab, vc in [
+        (k1, f'{len(df)}건',          '총 트립 수',     TXT),
+        (k2, f'{dist_mean:.1f} km',   '평균 주행거리',  TXT),
+        (k3, f'{dur_mean:.0f} min',   '평균 주행시간',  TXT),
+        (k4, f'{vel_mean:.1f} km/h',  '평균 속도',      TXT),
+        (k5, f'R² {metrics["R2"]:.3f}', '모델 R²',     r2c),
+    ]:
+        c_.markdown(
+            f'<div class="kpi"><div class="v" style="color:{vc}">{val}</div>'
+            f'<div class="l">{lab}</div></div>',
+            unsafe_allow_html=True)
 
-        dist_mean = df['Distance'].mean() if 'Distance' in df.columns else 0
-        vel_mean  = df['Velocity_mean'].mean() if 'Velocity_mean' in df.columns else 0
-        st.markdown(f"""
-        <div class="insight"><strong>평균 주행거리</strong>는 {dist_mean:.1f} km,
-        평균 주행속도는 {vel_mean:.1f} km/h입니다.</div>
-        <div class="insight">모델 R² <strong>{metrics['R2']:.3f}</strong> —
-        실제 주행거리 변동의 {metrics['R2']*100:.0f}%를 설명합니다.</div>
-        <div class="insight">MAE <strong>{metrics['MAE']:.1f} km</strong> —
-        예측이 평균적으로 이 범위 안에서 맞습니다.</div>
-        """, unsafe_allow_html=True)
+    st.markdown('<div style="height:18px"></div>', unsafe_allow_html=True)
 
-    with col_r:
-        st.markdown('<div class="sec-head">주행거리 분포</div>',
-                    unsafe_allow_html=True)
-        if 'Distance' in df.columns:
-            hist = go.Figure()
-            hist.add_trace(go.Histogram(
-                x=df['Distance'], nbinsx=35,
-                marker_color=BMW_BLUE, opacity=0.85,
-                name='주행거리',
+    # ── 주요 변수 분포 그리드 ─────────────────────────────────
+    st.markdown('<div class="sec-head">주요 변수 분포</div>', unsafe_allow_html=True)
+
+    dist_vars_def = [
+        ('Distance',               '주행거리',      'km'),
+        ('Duration',               '주행시간',      'min'),
+        ('Velocity_mean',          '평균 속도',     'km/h'),
+        ('SOC_Consumed',           'SOC 소모',      '%'),
+        ('Accel_abs_mean',         '평균 가속도',   'm/s²'),
+        ('Heating_Power_CAN_mean', '평균 난방출력', 'kW'),
+    ]
+    dist_vars = [(c, l, u) for c, l, u in dist_vars_def if c in df.columns]
+    DIST_COLORS = [BMW_BLUE, BMW_LIGHT, GREEN, AMBER, '#9C6EDD', '#FF6B8A']
+
+    if dist_vars:
+        r1 = st.columns(3)
+        r2 = st.columns(3)
+        all_grid = r1 + r2
+        for idx, (col_name, label, unit) in enumerate(dist_vars[:6]):
+            vals = df[col_name].dropna()
+            if col_name == 'SOC_Consumed':
+                vals = vals * 100
+            fig_h = go.Figure()
+            fig_h.add_trace(go.Histogram(
+                x=vals, nbinsx=25,
+                marker_color=DIST_COLORS[idx % len(DIST_COLORS)],
+                opacity=0.82, showlegend=False,
             ))
-            hist.add_vline(x=df['Distance'].mean(), line_color=AMBER,
-                           line_width=2,
-                           annotation_text=f"평균 {df['Distance'].mean():.1f}km",
-                           annotation_font_color=AMBER)
-            hist.update_layout(
-                height=310, paper_bgcolor='rgba(0,0,0,0)',
+            fig_h.add_vline(
+                x=float(vals.mean()), line_color=AMBER,
+                line_width=1.5, line_dash='dash',
+                annotation_text=f'μ={vals.mean():.1f}',
+                annotation_font_color=AMBER, annotation_font_size=9,
+            )
+            fig_h.update_layout(
+                title={'text': f'{label} ({unit})',
+                       'font': {'color': TXT, 'size': 11}, 'x': 0.03},
+                height=185, paper_bgcolor='rgba(0,0,0,0)',
                 plot_bgcolor='rgba(0,0,0,0)',
-                margin=dict(l=10, r=10, t=10, b=10),
-                xaxis={'gridcolor': LINE, 'color': SUB, 'title': '주행거리 (km)'},
-                yaxis={'gridcolor': LINE, 'color': SUB, 'title': '빈도'},
+                margin=dict(l=5, r=5, t=32, b=5),
+                xaxis={'gridcolor': LINE, 'color': SUB, 'tickfont': {'size': 9}},
+                yaxis={'gridcolor': LINE, 'color': SUB, 'tickfont': {'size': 9}},
                 showlegend=False,
             )
-            st.plotly_chart(hist, use_container_width=True, config={'displayModeBar': False})
+            all_grid[idx].plotly_chart(fig_h, use_container_width=True,
+                                       config={'displayModeBar': False})
 
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="sec-head">주요 변수 상관관계</div>',
-                unsafe_allow_html=True)
+    # ── 상관관계 히트맵 ───────────────────────────────────────
+    st.markdown('<div class="sec-head">주요 변수 상관관계</div>', unsafe_allow_html=True)
     heat_cols = ['Distance', 'Duration', 'Velocity_mean', 'Velocity_max',
                  'SOC_Consumed', 'Accel_abs_mean', 'Battery_Power_mean',
                  'Heating_Power_CAN_mean']
     heat_cols = [c for c in heat_cols if c in df.columns]
     corr = df[heat_cols].corr().round(2)
-    labels = [META[c][0] if c in META else c.replace('_', ' ') for c in corr.columns]
-
+    labels_h = [META[c][0] if c in META else c.replace('_', ' ') for c in corr.columns]
     heat = go.Figure(go.Heatmap(
-        z=corr.values, x=labels, y=labels,
+        z=corr.values, x=labels_h, y=labels_h,
         colorscale=[[0, '#0a1929'], [0.5, '#1C69D4'], [1, '#ffffff']],
         zmin=-1, zmax=1, text=corr.values, texttemplate='%{text}',
         textfont={'size': 10}, hoverongaps=False,
@@ -515,20 +483,29 @@ if page == "개요 · 홈":
     )
     st.plotly_chart(heat, use_container_width=True, config={'displayModeBar': False})
 
+    # ── 데이터 요약 인사이트 ──────────────────────────────────
+    corr_v = df['Velocity_mean'].corr(df['Distance']) if 'Velocity_mean' in df.columns else 0
+    corr_d = df['Duration'].corr(df['Distance'])      if 'Duration'      in df.columns else 0
+    st.markdown(f"""
+    <div class="insight">총 <strong>{len(df)}</strong>건 트립 데이터 — 평균 주행거리 <strong>{dist_mean:.1f} km</strong>,
+    평균 속도 <strong>{vel_mean:.1f} km/h</strong>, 평균 SOC 소모 <strong>{soc_mean:.1f}%</strong></div>
+    <div class="insight">모델 R² <strong>{metrics['R2']:.3f}</strong> · MAE <strong>{metrics['MAE']:.1f} km</strong> ·
+    속도↔거리 상관 <strong>{corr_v:.2f}</strong> · 시간↔거리 상관 <strong>{corr_d:.2f}</strong></div>
+    """, unsafe_allow_html=True)
+
 
 # ════════════════════════════════════════════════════════════════
 # PAGE 2 : 트립별 예측
 # ════════════════════════════════════════════════════════════════
 elif page == "트립별 예측":
-    st.markdown('<div class="bmw-title"> 트립별 주행거리 예측</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="bmw-sub">실제 트립 데이터를 로드하여 AI가 주행거리를 예측합니다 · 사이드바에서 트립을 선택하세요</div>',
+    st.markdown('<div class="bmw-title">트립별 주행거리 예측</div>', unsafe_allow_html=True)
+    st.markdown('<div class="bmw-sub">실제 트립 데이터를 로드하여 AI가 주행거리를 예측합니다 · 사이드바에서 트립을 선택하세요</div>',
                 unsafe_allow_html=True)
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
     if not trip_list:
         st.warning('data/ 폴더에 트립 CSV 파일이 없습니다.')
         st.stop()
-
     if selected_trip is None:
         selected_trip = trip_list[0]
 
@@ -538,28 +515,23 @@ elif page == "트립별 예측":
         st.stop()
 
     feats, actual_dist, soc_start_pct, soc_end_pct = compute_trip_features(trip_df)
-
-    # 모델 예측
     X_trip = pd.DataFrame([feats])[cols]
     pred_dist = float(max(model.predict(X_trip)[0], 0.0))
+    trip_name = selected_trip.replace('.csv', '')
+    series_label = ('Series A' if 'TripA' in selected_trip else
+                    'Series B' if 'TripB' in selected_trip else '—')
 
-    trip_name    = selected_trip.replace('.csv', '')
-    series_label = 'Series A' if 'TripA' in selected_trip else ('Series B' if 'TripB' in selected_trip else '—')
-
-    # KPI
     k1, k2, k3, k4 = st.columns(4)
     for c_, val, lab in [
-        (k1, f'{feats["Duration"]:.1f} min',        '주행 시간'),
-        (k2, f'{feats["Velocity_mean"]:.1f} km/h',  '평균 속도'),
-        (k3, f'{feats["SOC_Consumed"]*100:.1f} %',  'SOC 소모'),
+        (k1, f'{feats["Duration"]:.1f} min',       '주행 시간'),
+        (k2, f'{feats["Velocity_mean"]:.1f} km/h', '평균 속도'),
+        (k3, f'{feats["SOC_Consumed"]*100:.1f} %', 'SOC 소모'),
         (k4, f'{soc_start_pct:.0f}% → {soc_end_pct:.0f}%', '초기 → 종료 SoC'),
     ]:
-        c_.markdown(
-            f'<div class="kpi"><div class="v">{val}</div><div class="l">{lab}</div></div>',
-            unsafe_allow_html=True)
+        c_.markdown(f'<div class="kpi"><div class="v">{val}</div><div class="l">{lab}</div></div>',
+                   unsafe_allow_html=True)
 
     st.markdown('<div style="height:20px"></div>', unsafe_allow_html=True)
-
     col_l, col_r = st.columns([1, 1.3])
 
     with col_l:
@@ -571,23 +543,18 @@ elif page == "트립별 예측":
             f'<div class="pred-num">{pred_dist:,.1f}<span class="pred-unit"> km</span></div>'
             f'<div class="pred-label">{trip_name} · {series_label}</div>'
             f'</div>', unsafe_allow_html=True)
-
         st.markdown('<div style="height:10px"></div>', unsafe_allow_html=True)
 
-        # AI 예측 vs 실제 주행 비교 막대
         cmp = go.Figure()
         cmp.add_trace(go.Bar(
             x=['AI 예측', '실제 주행'],
             y=[pred_dist, actual_dist],
             marker_color=[BMW_BLUE, GREEN],
             text=[f'{pred_dist:.1f} km', f'{actual_dist:.1f} km'],
-            textposition='outside',
-            textfont={'color': TXT, 'size': 13},
-            width=0.4,
+            textposition='outside', textfont={'color': TXT, 'size': 13}, width=0.4,
         ))
         cmp.update_layout(
-            height=260, paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
+            height=240, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
             margin=dict(l=10, r=10, t=20, b=10),
             yaxis={'gridcolor': LINE, 'color': SUB, 'title': 'km',
                    'range': [0, max(pred_dist, actual_dist, 1) * 1.3]},
@@ -595,41 +562,32 @@ elif page == "트립별 예측":
         )
         st.plotly_chart(cmp, use_container_width=True, config={'displayModeBar': False})
         st.markdown(f"""
-        <div class="insight">실제 주행거리 <strong>{actual_dist:.1f} km</strong>,
-        AI 예측 <strong>{pred_dist:.1f} km</strong> — 오차율 <strong>{err_pct:.1f}%</strong></div>
-        <div class="insight">평균 속도 <strong>{feats['Velocity_mean']:.1f} km/h</strong> ·
-        최고 속도 <strong>{feats['Velocity_max']:.1f} km/h</strong></div>
-        <div class="insight">난방 평균 출력 <strong>{feats['Heating_Power_CAN_mean']:.2f} kW</strong> ·
-        배터리 평균 전압 <strong>{feats['Battery_Voltage_mean']:.0f} V</strong></div>
+        <div class="insight">실제 <strong>{actual_dist:.1f} km</strong> · AI 예측 <strong>{pred_dist:.1f} km</strong> · 오차율 <strong>{err_pct:.1f}%</strong></div>
+        <div class="insight">평균 속도 <strong>{feats['Velocity_mean']:.1f} km/h</strong> · 최고 속도 <strong>{feats['Velocity_max']:.1f} km/h</strong></div>
+        <div class="insight">난방 출력 <strong>{feats['Heating_Power_CAN_mean']:.2f} kW</strong> · 배터리 전압 <strong>{feats['Battery_Voltage_mean']:.0f} V</strong></div>
         """, unsafe_allow_html=True)
 
     with col_r:
-        # 시계열 컬럼 이름 찾기
-        t_col_name  = next((c for c in trip_df.columns if 'time' in c.lower()), None)
-        v_col_name  = next((c for c in trip_df.columns if 'velocity' in c.lower()), None)
+        t_col_name = next((c for c in trip_df.columns if 'time' in c.lower()), None)
+        v_col_name = next((c for c in trip_df.columns if 'velocity' in c.lower()), None)
         soc_col_name = next(
             (c for c in trip_df.columns
-             if 'soc [%]' in c.lower()
-             and 'max' not in c.lower()
-             and 'min' not in c.lower()
-             and 'displayed' not in c.lower()),
-            None)
+             if 'soc [%]' in c.lower() and 'max' not in c.lower()
+             and 'min' not in c.lower() and 'displayed' not in c.lower()), None)
 
         if t_col_name and v_col_name:
-            t_ser = pd.to_numeric(trip_df[t_col_name], errors='coerce') / 60
+            t_ser = pd.to_numeric(trip_df[t_col_name], errors='coerce')
             v_ser = pd.to_numeric(trip_df[v_col_name], errors='coerce')
-
             vel_fig = go.Figure()
             vel_fig.add_trace(go.Scatter(
-                x=t_ser, y=v_ser, mode='lines',
+                x=t_ser / 60, y=v_ser, mode='lines',
                 line={'color': BMW_BLUE, 'width': 1.5},
                 fill='tozeroy', fillcolor='rgba(28,105,212,0.15)',
             ))
             vel_fig.update_layout(
                 title={'text': f'속도 프로파일 — {trip_name}',
                        'font': {'color': TXT, 'size': 13}, 'x': 0.03},
-                height=270, paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
+                height=250, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
                 margin=dict(l=10, r=10, t=40, b=10),
                 xaxis={'gridcolor': LINE, 'color': SUB, 'title': '시간 (분)'},
                 yaxis={'gridcolor': LINE, 'color': SUB, 'title': 'km/h'},
@@ -641,15 +599,13 @@ elif page == "트립별 예측":
             soc_ser = pd.to_numeric(trip_df[soc_col_name], errors='coerce')
             soc_fig = go.Figure()
             soc_fig.add_trace(go.Scatter(
-                x=t_ser, y=soc_ser, mode='lines',
+                x=t_ser / 60, y=soc_ser, mode='lines',
                 line={'color': GREEN, 'width': 1.5},
                 fill='tozeroy', fillcolor='rgba(0,200,150,0.12)',
             ))
             soc_fig.update_layout(
-                title={'text': 'SoC 프로파일',
-                       'font': {'color': TXT, 'size': 13}, 'x': 0.03},
-                height=230, paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
+                title={'text': 'SoC 프로파일', 'font': {'color': TXT, 'size': 13}, 'x': 0.03},
+                height=210, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
                 margin=dict(l=10, r=10, t=40, b=10),
                 xaxis={'gridcolor': LINE, 'color': SUB, 'title': '시간 (분)'},
                 yaxis={'gridcolor': LINE, 'color': SUB, 'title': 'SoC (%)'},
@@ -657,21 +613,66 @@ elif page == "트립별 예측":
             )
             st.plotly_chart(soc_fig, use_container_width=True, config={'displayModeBar': False})
 
+    # ── 다중 시계열 샘플링 비교 ───────────────────────────────
+    if t_col_name and v_col_name:
+        st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="sec-head">샘플링 단위별 속도 프로파일 비교</div>',
+                    unsafe_allow_html=True)
+
+        t_raw = pd.to_numeric(trip_df[t_col_name], errors='coerce').reset_index(drop=True)
+        v_raw = pd.to_numeric(trip_df[v_col_name], errors='coerce').reset_index(drop=True)
+        dt_med = float(t_raw.diff().median())
+
+        intervals_s = [0.1, 1.0, 3.0, 5.0]
+        ts_labels   = ['0.1초 (원본)', '1초', '3초', '5초']
+        ts_colors   = [BMW_BLUE, GREEN, AMBER, RED]
+
+        ms_cols = st.columns(4)
+        for idx, (interval, color, lbl) in enumerate(zip(intervals_s, ts_colors, ts_labels)):
+            if dt_med > 0 and dt_med <= interval + 0.01:
+                skip = max(1, round(interval / dt_med))
+                t_d = t_raw.iloc[::skip] / 60
+                v_d = v_raw.iloc[::skip]
+            else:
+                t_d = t_raw / 60
+                v_d = v_raw
+
+            f = go.Figure()
+            f.add_trace(go.Scatter(
+                x=t_d, y=v_d, mode='lines',
+                line={'color': color, 'width': 1.3},
+                fill='tozeroy',
+                fillcolor=f'rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.12)',
+                showlegend=False,
+            ))
+            f.update_layout(
+                title={'text': lbl, 'font': {'color': TXT, 'size': 11}, 'x': 0.5},
+                height=200, paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                margin=dict(l=5, r=5, t=32, b=5),
+                xaxis={'gridcolor': LINE, 'color': SUB, 'title': 'min',
+                       'tickfont': {'size': 8}},
+                yaxis={'gridcolor': LINE, 'color': SUB, 'title': 'km/h',
+                       'tickfont': {'size': 8}},
+            )
+            ms_cols[idx].plotly_chart(f, use_container_width=True,
+                                      config={'displayModeBar': False})
+        st.caption('시간 단위가 클수록 속도의 세부 변화가 평탄화됩니다.')
+
 
 # ════════════════════════════════════════════════════════════════
 # PAGE 3 : 주행거리 예측 (슬라이더)
 # ════════════════════════════════════════════════════════════════
 elif page == "주행거리 예측":
-    st.markdown('<div class="bmw-title"> 주행거리 예측</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="bmw-sub">슬라이더로 주행 조건을 설정하면 AI가 주행거리를 실시간 예측합니다</div>',
+    st.markdown('<div class="bmw-title">주행거리 예측</div>', unsafe_allow_html=True)
+    st.markdown('<div class="bmw-sub">슬라이더로 주행 조건을 설정하면 AI가 주행거리를 실시간 예측합니다</div>',
                 unsafe_allow_html=True)
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
     left, right = st.columns([1.1, 1])
 
     with left:
-        st.markdown('<div class="sec-head"><span>🎛️</span>주행 조건 설정</div>',
-                    unsafe_allow_html=True)
+        st.markdown('<div class="sec-head">주행 조건 설정</div>', unsafe_allow_html=True)
         inputs = {}
         c1, c2 = st.columns(2)
         for i, feat in enumerate(PRIMARY):
@@ -685,7 +686,7 @@ elif page == "주행거리 예측":
             tgt = c1 if i % 2 == 0 else c2
             inputs[feat] = tgt.slider(f'{label} ({unit})', lo, hi, default, step)
 
-        with st.expander(' 고급 변수 (나머지 모델 입력값)'):
+        with st.expander('고급 변수 (나머지 모델 입력값)'):
             for feat in cols:
                 if feat in PRIMARY:
                     continue
@@ -696,19 +697,21 @@ elif page == "주행거리 예측":
 
     row = {}
     for feat in cols:
-        v = inputs.get(feat, float(medians.get(feat, 0)))
+        v_val = inputs.get(feat, float(medians.get(feat, 0)))
         if feat == 'SOC_Consumed':
-            v = v / 100.0
-        row[feat] = v
+            v_val = v_val / 100.0
+        row[feat] = v_val
     X_one = pd.DataFrame([row])[cols]
     pred = float(max(model.predict(X_one)[0], 0.0))
 
-    v_mean   = inputs.get('Velocity_mean', 40)
-    dur      = inputs.get('Duration', 20)
-    soc_pct  = inputs.get('SOC_Consumed', 10)
+    v_mean    = inputs.get('Velocity_mean', 40)
+    dur       = inputs.get('Duration', 20)
+    soc_pct   = inputs.get('SOC_Consumed', 10)
     phys_dist = v_mean * dur / 60
-    eff      = pred / soc_pct if soc_pct > 0.1 else 0
-    diff_pct = (pred - phys_dist) / phys_dist * 100 if phys_dist > 0 else 0
+    eff       = pred / soc_pct if soc_pct > 0.1 else 0
+    diff_pct  = (pred - phys_dist) / phys_dist * 100 if phys_dist > 0 else 0
+    arrow     = '▲' if diff_pct >= 0 else '▼'
+    arrow_col = GREEN if diff_pct >= 0 else RED
 
     with right:
         st.markdown(
@@ -718,39 +721,30 @@ elif page == "주행거리 예측":
             f'<div class="pred-num">{pred:,.1f}<span class="pred-unit"> km</span></div>'
             f'<div class="pred-label">AI MODEL PREDICTION</div>'
             f'</div>', unsafe_allow_html=True)
-
         st.markdown('<div style="height:14px"></div>', unsafe_allow_html=True)
 
         gauge = go.Figure(go.Indicator(
-            mode='gauge+number',
-            value=v_mean,
+            mode='gauge+number', value=v_mean,
             number={'suffix': ' km/h', 'font': {'size': 28, 'color': TXT, 'family': 'Inter'}},
             gauge={
-                'axis': {'range': [0, 110], 'tickcolor': SUB,
-                         'tickfont': {'color': SUB, 'size': 10}},
+                'axis': {'range': [0, 110], 'tickcolor': SUB, 'tickfont': {'color': SUB, 'size': 10}},
                 'bar': {'color': BMW_BLUE, 'thickness': 0.3},
                 'bgcolor': PANEL2, 'borderwidth': 0,
-                'steps': [
-                    {'range': [0, 40],  'color': '#0d2040'},
-                    {'range': [40, 75], 'color': '#102a50'},
-                    {'range': [75, 110],'color': '#0f3060'}],
-                'threshold': {
-                    'line': {'color': AMBER, 'width': 3},
-                    'thickness': 0.8,
-                    'value': inputs.get('Velocity_max', v_mean),
-                },
+                'steps': [{'range': [0, 40], 'color': '#0d2040'},
+                           {'range': [40, 75], 'color': '#102a50'},
+                           {'range': [75, 110], 'color': '#0f3060'}],
+                'threshold': {'line': {'color': AMBER, 'width': 3}, 'thickness': 0.8,
+                              'value': inputs.get('Velocity_max', v_mean)},
             }))
         gauge.update_layout(
             height=220, margin=dict(l=20, r=20, t=10, b=0),
             paper_bgcolor='rgba(0,0,0,0)', font={'color': TXT})
         st.plotly_chart(gauge, use_container_width=True, config={'displayModeBar': False})
-        st.caption(f'● 파란 바 = 평균 속도 · 주황 눈금 = 최고 속도 ({inputs.get("Velocity_max",0):.0f} km/h)')
+        st.caption(f'파란 바 = 평균 속도 · 주황 눈금 = 최고 속도 ({inputs.get("Velocity_max",0):.0f} km/h)')
 
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
     k1, k2, k3, k4 = st.columns(4)
-    arrow = '▲' if diff_pct >= 0 else '▼'
-    arrow_col = GREEN if diff_pct >= 0 else RED
     for col2, val, lab in [
         (k1, f'{phys_dist:,.1f} km', '물리식 거리 (v×t)'),
         (k2, f'{dur:,.0f} min',      '주행 시간'),
@@ -761,24 +755,19 @@ elif page == "주행거리 예측":
                       f'<div class="l">{lab}</div></div>', unsafe_allow_html=True)
 
     st.markdown('<div style="height:16px"></div>', unsafe_allow_html=True)
-
     col_a, col_b = st.columns(2)
+
     with col_a:
-        st.markdown('<div class="sec-head">모델 예측 vs 물리식 비교</div>',
-                    unsafe_allow_html=True)
+        st.markdown('<div class="sec-head">AI 예측 vs 물리식</div>', unsafe_allow_html=True)
         cmp_fig = go.Figure()
         cmp_fig.add_trace(go.Bar(
-            x=['AI 모델 예측', '물리식 (v×t)'],
-            y=[pred, phys_dist],
+            x=['AI 모델 예측', '물리식 (v×t)'], y=[pred, phys_dist],
             marker_color=[BMW_BLUE, SUB],
             text=[f'{pred:.1f} km', f'{phys_dist:.1f} km'],
-            textposition='outside',
-            textfont={'color': TXT, 'size': 13},
-            width=0.45,
+            textposition='outside', textfont={'color': TXT, 'size': 13}, width=0.45,
         ))
         cmp_fig.update_layout(
-            height=280, paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
+            height=280, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
             margin=dict(l=10, r=10, t=20, b=10),
             yaxis={'gridcolor': LINE, 'color': SUB, 'title': 'km',
                    'range': [0, max(pred, phys_dist) * 1.25]},
@@ -787,32 +776,18 @@ elif page == "주행거리 예측":
         st.plotly_chart(cmp_fig, use_container_width=True, config={'displayModeBar': False})
 
     with col_b:
-        st.markdown('<div class="sec-head">예측 인사이트</div>',
-                    unsafe_allow_html=True)
+        st.markdown('<div class="sec-head">SOC 소모 민감도</div>', unsafe_allow_html=True)
         st.markdown(f"""
-        <div class="insight">
-          AI 모델이 물리식보다 <strong style="color:{arrow_col}">{arrow} {abs(diff_pct):.1f}%</strong>
-          {'높게' if diff_pct >= 0 else '낮게'} 예측했습니다.
-          {'배터리 효율·난방 등 복합 요소가 거리를 늘립니다.' if diff_pct >= 0
-           else '실제 저항·에너지 손실로 물리식보다 짧을 수 있습니다.'}
-        </div>
-        <div class="insight">
-          SOC 효율 <strong>{eff:.2f} km/%</strong> — 배터리 1% 소모당 {eff:.2f} km 주행 가능.
-        </div>
-        <div class="insight">
-          평균 속도 <strong>{v_mean:.0f} km/h</strong> 구간에서
-          {'고속 주행으로 에너지 소모가 증가합니다.' if v_mean > 80
-           else '효율적인 속도 범위입니다.' if v_mean > 40
-           else '저속 주행, 도심 구간으로 판단됩니다.'}
-        </div>
+        <div class="insight">AI 모델이 물리식보다 <strong style="color:{arrow_col}">{arrow} {abs(diff_pct):.1f}%</strong>
+        {'높게' if diff_pct >= 0 else '낮게'} 예측했습니다.</div>
+        <div class="insight">SOC 효율 <strong>{eff:.2f} km/%</strong> — 배터리 1% 소모당 {eff:.2f} km 주행</div>
         """, unsafe_allow_html=True)
 
         soc_range = np.linspace(1, 60, 40)
         preds_soc = []
         for sv in soc_range:
-            r2 = dict(row)
-            r2['SOC_Consumed'] = sv / 100.0
-            preds_soc.append(float(max(model.predict(pd.DataFrame([r2])[cols])[0], 0)))
+            r2_tmp = dict(row); r2_tmp['SOC_Consumed'] = sv / 100.0
+            preds_soc.append(float(max(model.predict(pd.DataFrame([r2_tmp])[cols])[0], 0)))
         soc_line = go.Figure()
         soc_line.add_trace(go.Scatter(
             x=soc_range, y=preds_soc, mode='lines',
@@ -822,8 +797,7 @@ elif page == "주행거리 예측":
         soc_line.add_vline(x=soc_pct, line_color=AMBER, line_dash='dash',
                            annotation_text=f'{soc_pct:.0f}%', annotation_font_color=AMBER)
         soc_line.update_layout(
-            height=210, paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
+            height=240, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
             margin=dict(l=10, r=10, t=10, b=10),
             xaxis={'gridcolor': LINE, 'color': SUB, 'title': 'SOC 소모 (%)'},
             yaxis={'gridcolor': LINE, 'color': SUB, 'title': '예측 km'},
@@ -834,21 +808,21 @@ elif page == "주행거리 예측":
 
 
 # ════════════════════════════════════════════════════════════════
-# PAGE 4 : 모델 성능 분석
+# PAGE 4 : 모델 분석 (성능 + 비교 통합)
 # ════════════════════════════════════════════════════════════════
-elif page == "모델 성능 분석":
-    st.markdown('<div class="bmw-title"> 모델 성능 분석</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="bmw-sub">CatBoost 모델의 예측 정확도 · 잔차 분석 · 오차 분포</div>',
+elif page == "모델 분석":
+    st.markdown('<div class="bmw-title">모델 분석</div>', unsafe_allow_html=True)
+    st.markdown('<div class="bmw-sub">예측 성능 · 잔차 분석 · 베이스라인 / Optuna / GridSearch 비교</div>',
                 unsafe_allow_html=True)
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
     k1, k2, k3, k4 = st.columns(4)
     r2c = GREEN if metrics['R2'] >= 0.8 else AMBER
     for col2, val, lab, vc in [
-        (k1, f"{metrics['R2']:.4f}", "R² Score", r2c),
-        (k2, f"{metrics['MAE']:.2f} km", "MAE", TXT),
-        (k3, f"{metrics['RMSE']:.2f} km", "RMSE", TXT),
-        (k4, f"{metrics['n']}건", "전체 데이터", TXT),
+        (k1, f"{metrics['R2']:.4f}",   "R² Score",  r2c),
+        (k2, f"{metrics['MAE']:.2f} km", "MAE",     TXT),
+        (k3, f"{metrics['RMSE']:.2f} km","RMSE",    TXT),
+        (k4, f"{metrics['n']}건",       "전체 데이터", TXT),
     ]:
         col2.markdown(
             f'<div class="kpi"><div class="v" style="color:{vc}">{val}</div>'
@@ -856,88 +830,67 @@ elif page == "모델 성능 분석":
 
     st.markdown('<div style="height:18px"></div>', unsafe_allow_html=True)
 
-    yte      = metrics['yte']
-    pred_te  = metrics['pred_te']
+    yte       = metrics['yte']
+    pred_te   = metrics['pred_te']
     residuals = yte - pred_te
+    abs_err   = np.sort(np.abs(residuals))
+    cdf_y     = np.arange(1, len(abs_err) + 1) / len(abs_err)
+    p50 = float(np.percentile(abs_err, 50))
+    p80 = float(np.percentile(abs_err, 80))
 
     col_l, col_r = st.columns(2)
 
     with col_l:
-        st.markdown('<div class="sec-head">예측값 vs 실제값</div>',
-                    unsafe_allow_html=True)
+        st.markdown('<div class="sec-head">예측값 vs 실제값</div>', unsafe_allow_html=True)
         sc = go.Figure()
         sc.add_trace(go.Scatter(
             x=yte, y=pred_te, mode='markers',
-            marker={'color': BMW_BLUE, 'size': 5, 'opacity': 0.65},
-            name='예측 vs 실제',
+            marker={'color': BMW_BLUE, 'size': 5, 'opacity': 0.65}, name='예측 vs 실제',
         ))
         lim = max(yte.max(), pred_te.max()) * 1.05
         sc.add_trace(go.Scatter(
-            x=[0, lim], y=[0, lim],
-            mode='lines', line={'color': AMBER, 'dash': 'dash', 'width': 1.5},
-            name='완벽 예측선',
+            x=[0, lim], y=[0, lim], mode='lines',
+            line={'color': AMBER, 'dash': 'dash', 'width': 1.5}, name='완벽 예측선',
         ))
         sc.update_layout(
-            height=350, paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
+            height=350, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
             margin=dict(l=10, r=10, t=10, b=10),
             xaxis={'gridcolor': LINE, 'color': SUB, 'title': '실제 주행거리 (km)'},
             yaxis={'gridcolor': LINE, 'color': SUB, 'title': '예측 주행거리 (km)'},
             legend={'font': {'color': SUB}},
         )
         st.plotly_chart(sc, use_container_width=True, config={'displayModeBar': False})
-        st.markdown(f"""
-        <div class="insight">점이 주황 대각선에 가까울수록 예측이 정확합니다.
-        현재 R² <strong>{metrics['R2']:.3f}</strong>으로 실제 변동의
-        {metrics['R2']*100:.0f}%를 설명합니다.</div>
-        """, unsafe_allow_html=True)
 
     with col_r:
-        st.markdown('<div class="sec-head">잔차 분포</div>',
-                    unsafe_allow_html=True)
+        st.markdown('<div class="sec-head">잔차 분포</div>', unsafe_allow_html=True)
         res_hist = go.Figure()
         res_hist.add_trace(go.Histogram(
-            x=residuals, nbinsx=35,
-            marker_color=BMW_BLUE, opacity=0.8, name='잔차',
+            x=residuals, nbinsx=35, marker_color=BMW_BLUE, opacity=0.8,
         ))
         res_hist.add_vline(x=0, line_color=AMBER, line_width=2,
                            annotation_text='잔차=0', annotation_font_color=AMBER)
         res_hist.update_layout(
-            height=350, paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
+            height=350, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
             margin=dict(l=10, r=10, t=10, b=10),
-            xaxis={'gridcolor': LINE, 'color': SUB, 'title': '잔차 (실제 - 예측) km'},
+            xaxis={'gridcolor': LINE, 'color': SUB, 'title': '잔차 (실제-예측) km'},
             yaxis={'gridcolor': LINE, 'color': SUB, 'title': '빈도'},
             showlegend=False,
         )
         st.plotly_chart(res_hist, use_container_width=True, config={'displayModeBar': False})
-        st.markdown(f"""
-        <div class="insight">잔차 평균 <strong>{residuals.mean():.2f} km</strong>,
-        표준편차 <strong>{residuals.std():.2f} km</strong>.
-        0에 가까운 대칭 분포일수록 편향 없는 모델입니다.</div>
-        """, unsafe_allow_html=True)
 
-    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-
-    st.markdown('<div class="sec-head">오차 누적 분포 (CDF)</div>',
-                unsafe_allow_html=True)
-    abs_err = np.sort(np.abs(residuals))
-    cdf = np.arange(1, len(abs_err) + 1) / len(abs_err)
+    st.markdown('<div class="sec-head">오차 누적 분포 (CDF)</div>', unsafe_allow_html=True)
     cdf_fig = go.Figure()
     cdf_fig.add_trace(go.Scatter(
-        x=abs_err, y=cdf * 100, mode='lines',
+        x=abs_err, y=cdf_y * 100, mode='lines',
         line={'color': BMW_BLUE, 'width': 2.5},
         fill='tozeroy', fillcolor='rgba(28,105,212,0.12)',
     ))
-    p50 = float(np.percentile(abs_err, 50))
-    p80 = float(np.percentile(abs_err, 80))
     cdf_fig.add_vline(x=p50, line_color=GREEN, line_dash='dash',
                       annotation_text=f'50%: {p50:.1f}km', annotation_font_color=GREEN)
     cdf_fig.add_vline(x=p80, line_color=AMBER, line_dash='dash',
                       annotation_text=f'80%: {p80:.1f}km', annotation_font_color=AMBER)
     cdf_fig.update_layout(
-        height=300, paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
+        height=280, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         margin=dict(l=10, r=10, t=20, b=10),
         xaxis={'gridcolor': LINE, 'color': SUB, 'title': '절대 오차 (km)'},
         yaxis={'gridcolor': LINE, 'color': SUB, 'title': '누적 비율 (%)'},
@@ -945,136 +898,81 @@ elif page == "모델 성능 분석":
     )
     st.plotly_chart(cdf_fig, use_container_width=True, config={'displayModeBar': False})
     st.markdown(f"""
-    <div class="insight">예측의 <strong>50%</strong>는 ±{p50:.1f} km 이내,
-    <strong>80%</strong>는 ±{p80:.1f} km 이내에서 맞습니다.</div>
+    <div class="insight">잔차 평균 <strong>{residuals.mean():.2f} km</strong> · 표준편차 <strong>{residuals.std():.2f} km</strong> ·
+    예측의 <strong>50%</strong>는 ±{p50:.1f} km, <strong>80%</strong>는 ±{p80:.1f} km 이내</div>
     """, unsafe_allow_html=True)
 
-
-# ════════════════════════════════════════════════════════════════
-# PAGE 5 : 모델 비교
-# ════════════════════════════════════════════════════════════════
-elif page == "모델 비교":
-    st.markdown('<div class="bmw-title"> 모델 성능 비교</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="bmw-sub">베이스라인 · Optuna · GridSearch 모델 성능 비교 분석</div>',
-                unsafe_allow_html=True)
-    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-
+    # ── 베이스라인 & Optuna 비교 ──────────────────────────────
     df_base, df_opt = load_model_comparison()
 
-    # ── 베이스라인 비교 ─────────────────────────────────────────
     if not df_base.empty:
+        st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
         st.markdown('<div class="sec-head">베이스라인 모델 비교 (AB통합 vs B만)</div>',
                     unsafe_allow_html=True)
 
-        # 노트북별 최고 R² 행 선택
-        best_base = (df_base
-                     .sort_values('R2', ascending=False)
-                     .groupby(['Notebook', 'Model'], as_index=False)
-                     .first())
-
+        best_base = (df_base.sort_values('R2', ascending=False)
+                     .groupby(['Notebook', 'Model'], as_index=False).first())
         notebooks = ['AB통합', 'B만']
-        models    = ['CatBoost', 'XGBoost', 'RandomForest', 'LightGBM']
+        models_list = ['CatBoost', 'XGBoost', 'RandomForest', 'LightGBM']
         nb_colors = {'AB통합': BMW_BLUE, 'B만': GREEN}
 
-        col_l, col_r = st.columns(2)
+        bl_l, bl_r = st.columns(2)
+        for out_col, mkey, ylabel, yrange in [
+            (bl_l, 'R2',   'R² Score',  [0, 1.12]),
+            (bl_r, 'RMSE', 'RMSE (km)', None),
+        ]:
+            with out_col:
+                fig = go.Figure()
+                for nb in notebooks:
+                    sub = best_base[best_base['Notebook'] == nb]
+                    vals = [float(sub[sub['Model'] == m][mkey].values[0])
+                            if len(sub[sub['Model'] == m]) > 0 else 0.0
+                            for m in models_list]
+                    fig.add_trace(go.Bar(
+                        name=nb, x=models_list, y=vals,
+                        marker_color=nb_colors.get(nb, AMBER),
+                        text=[f'{v:.3f}' if v > 0 else '—' for v in vals],
+                        textposition='outside', textfont={'color': TXT, 'size': 10},
+                    ))
+                y_cfg = {'gridcolor': LINE, 'color': SUB, 'title': ylabel}
+                if yrange:
+                    y_cfg['range'] = yrange
+                fig.update_layout(
+                    height=320, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                    margin=dict(l=10, r=10, t=10, b=10),
+                    barmode='group', xaxis={'color': TXT}, yaxis=y_cfg,
+                    legend={'font': {'color': SUB}},
+                )
+                st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-        with col_l:
-            st.markdown('<div class="sec-head">R² Score 비교</div>',
-                        unsafe_allow_html=True)
-            r2_fig = go.Figure()
-            for nb in notebooks:
-                sub = best_base[best_base['Notebook'] == nb]
-                r2_vals = []
-                for m in models:
-                    mrow = sub[sub['Model'] == m]
-                    r2_vals.append(float(mrow['R2'].values[0]) if len(mrow) > 0 else 0.0)
-                r2_fig.add_trace(go.Bar(
-                    name=nb, x=models, y=r2_vals,
-                    marker_color=nb_colors.get(nb, AMBER),
-                    text=[f'{v:.3f}' if v > 0 else '—' for v in r2_vals],
-                    textposition='outside',
-                    textfont={'color': TXT, 'size': 10},
-                ))
-            r2_fig.update_layout(
-                height=360, paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                margin=dict(l=10, r=10, t=10, b=10),
-                barmode='group',
-                xaxis={'color': TXT, 'title': '모델'},
-                yaxis={'gridcolor': LINE, 'color': SUB, 'title': 'R² Score',
-                       'range': [0, 1.12]},
-                legend={'font': {'color': SUB}},
-            )
-            st.plotly_chart(r2_fig, use_container_width=True, config={'displayModeBar': False})
-
-        with col_r:
-            st.markdown('<div class="sec-head">RMSE 비교 (낮을수록 좋음)</div>',
-                        unsafe_allow_html=True)
-            rmse_fig = go.Figure()
-            for nb in notebooks:
-                sub = best_base[best_base['Notebook'] == nb]
-                rmse_vals = []
-                for m in models:
-                    mrow = sub[sub['Model'] == m]
-                    rmse_vals.append(float(mrow['RMSE'].values[0]) if len(mrow) > 0 else 0.0)
-                rmse_fig.add_trace(go.Bar(
-                    name=nb, x=models, y=rmse_vals,
-                    marker_color=nb_colors.get(nb, AMBER),
-                    text=[f'{v:.2f}' if v > 0 else '—' for v in rmse_vals],
-                    textposition='outside',
-                    textfont={'color': TXT, 'size': 10},
-                ))
-            rmse_fig.update_layout(
-                height=360, paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                margin=dict(l=10, r=10, t=10, b=10),
-                barmode='group',
-                xaxis={'color': TXT, 'title': '모델'},
-                yaxis={'gridcolor': LINE, 'color': SUB, 'title': 'RMSE (km)'},
-                legend={'font': {'color': SUB}},
-            )
-            st.plotly_chart(rmse_fig, use_container_width=True, config={'displayModeBar': False})
-
-        # 인사이트
         best_row = df_base.loc[df_base['R2'].idxmax()]
         st.markdown(f"""
         <div class="insight">최고 성능: <strong>{best_row['Model']}</strong>
-        ({best_row['Notebook']} · {best_row.get('Feature_Set','—')}) —
-        R² <strong>{best_row['R2']:.3f}</strong>,
-        RMSE <strong>{best_row['RMSE']:.2f} km</strong>,
-        MAE <strong>{best_row['MAE']:.2f} km</strong></div>
-        <div class="insight">AB통합 데이터가 B만 데이터보다 일반적으로 더 높은 R²를 보입니다.
-        더 다양한 주행 패턴이 포함되어 모델 일반화에 유리합니다.</div>
+        ({best_row['Notebook']}) — R² <strong>{best_row['R2']:.3f}</strong>,
+        RMSE <strong>{best_row['RMSE']:.2f} km</strong></div>
         """, unsafe_allow_html=True)
 
-    # ── Optuna / GridSearch 비교 ─────────────────────────────────
     if not df_opt.empty:
         st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
         st.markdown('<div class="sec-head">Optuna · GridSearch 튜닝 성능 비교</div>',
                     unsafe_allow_html=True)
-
         df_rmse = df_opt[df_opt['RMSE_mean'].notna()].copy()
-        df_rmse['Label'] = (df_rmse['Notebook'] + ' | '
-                            + df_rmse['Model'] + ' | '
+        df_rmse['Label'] = (df_rmse['Notebook'] + ' | ' + df_rmse['Model'] + ' | '
                             + df_rmse['Method'].str.replace(r'\s*\(.*\)', '', regex=True).str.strip())
-
         nb_colors_opt = {'AB통합': BMW_BLUE, 'B만': GREEN}
         bar_colors = [nb_colors_opt.get(nb, AMBER) for nb in df_rmse['Notebook']]
-        err_arr    = df_rmse['RMSE_std'].fillna(0).tolist()
 
         opt_fig = go.Figure()
         opt_fig.add_trace(go.Bar(
-            x=df_rmse['Label'],
-            y=df_rmse['RMSE_mean'],
-            error_y=dict(type='data', array=err_arr, visible=True, color=AMBER),
+            x=df_rmse['Label'], y=df_rmse['RMSE_mean'],
+            error_y=dict(type='data', array=df_rmse['RMSE_std'].fillna(0).tolist(),
+                         visible=True, color=AMBER),
             marker_color=bar_colors,
             text=[f'{v:.2f}' for v in df_rmse['RMSE_mean']],
-            textposition='outside',
-            textfont={'color': TXT, 'size': 10},
+            textposition='outside', textfont={'color': TXT, 'size': 10},
         ))
         opt_fig.update_layout(
-            height=400, paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
+            height=380, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
             margin=dict(l=10, r=10, t=20, b=100),
             xaxis={'color': TXT, 'tickangle': -35},
             yaxis={'gridcolor': LINE, 'color': SUB, 'title': 'RMSE (km)'},
@@ -1082,159 +980,45 @@ elif page == "모델 비교":
         )
         st.plotly_chart(opt_fig, use_container_width=True, config={'displayModeBar': False})
 
-        # AB통합 vs B만 최고 성능 비교
-        ab_best = df_rmse[df_rmse['Notebook'] == 'AB통합']['RMSE_mean'].min() if 'AB통합' in df_rmse['Notebook'].values else None
-        b_best  = df_rmse[df_rmse['Notebook'] == 'B만']['RMSE_mean'].min() if 'B만' in df_rmse['Notebook'].values else None
-
+        ab_best = (df_rmse[df_rmse['Notebook'] == 'AB통합']['RMSE_mean'].min()
+                   if 'AB통합' in df_rmse['Notebook'].values else None)
+        b_best  = (df_rmse[df_rmse['Notebook'] == 'B만']['RMSE_mean'].min()
+                   if 'B만' in df_rmse['Notebook'].values else None)
         if ab_best and b_best:
             st.markdown(f"""
             <div class="insight">튜닝 후 최고 RMSE — AB통합: <strong>{ab_best:.3f} km</strong>,
-            B만: <strong>{b_best:.3f} km</strong>
-            (AB통합이 {b_best - ab_best:.3f} km 낮음)</div>
+            B만: <strong>{b_best:.3f} km</strong> (AB통합이 {b_best-ab_best:.3f} km 낮음)</div>
             """, unsafe_allow_html=True)
-
-        # 전체 결과 테이블
-        st.markdown('<div style="height:10px"></div>', unsafe_allow_html=True)
         st.dataframe(df_opt.fillna('—'), use_container_width=True)
 
 
 # ════════════════════════════════════════════════════════════════
-# PAGE 6 : 데이터 인사이트
+# PAGE 5 : 변수 분석 (인사이트 + 중요도 통합)
 # ════════════════════════════════════════════════════════════════
-elif page == "데이터 인사이트":
-    st.markdown('<div class="bmw-title">📈 데이터 인사이트</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="bmw-sub">주행 패턴 분석 · 변수 간 관계 · 주행 조건별 효율</div>',
-                unsafe_allow_html=True)
-    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-
-    col_l, col_r = st.columns(2)
-
-    with col_l:
-        st.markdown('<div class="sec-head">평균 속도 vs 주행거리</div>',
-                    unsafe_allow_html=True)
-        if 'Velocity_mean' in df.columns and 'Distance' in df.columns:
-            sc2 = go.Figure()
-            sc2.add_trace(go.Scatter(
-                x=df['Velocity_mean'], y=df['Distance'],
-                mode='markers',
-                marker={
-                    'color': df['SOC_Consumed'] * 100 if 'SOC_Consumed' in df.columns
-                             else BMW_BLUE,
-                    'colorscale': [[0, '#0a2040'], [0.5, BMW_BLUE], [1, '#7ab8f5']],
-                    'size': 5, 'opacity': 0.65,
-                    'colorbar': {'title': 'SOC%', 'tickfont': {'color': SUB}},
-                    'showscale': 'SOC_Consumed' in df.columns,
-                },
-            ))
-            sc2.update_layout(
-                height=320, paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                margin=dict(l=10, r=10, t=10, b=10),
-                xaxis={'gridcolor': LINE, 'color': SUB, 'title': '평균 속도 (km/h)'},
-                yaxis={'gridcolor': LINE, 'color': SUB, 'title': '주행거리 (km)'},
-                showlegend=False,
-            )
-            st.plotly_chart(sc2, use_container_width=True, config={'displayModeBar': False})
-
-    with col_r:
-        st.markdown('<div class="sec-head">주행 시간 vs 주행거리</div>',
-                    unsafe_allow_html=True)
-        if 'Duration' in df.columns and 'Distance' in df.columns:
-            sc3 = go.Figure()
-            sc3.add_trace(go.Scatter(
-                x=df['Duration'], y=df['Distance'],
-                mode='markers',
-                marker={'color': BMW_LIGHT, 'size': 5, 'opacity': 0.6},
-            ))
-            sc3.update_layout(
-                height=320, paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                margin=dict(l=10, r=10, t=10, b=10),
-                xaxis={'gridcolor': LINE, 'color': SUB, 'title': '주행 시간 (min)'},
-                yaxis={'gridcolor': LINE, 'color': SUB, 'title': '주행거리 (km)'},
-                showlegend=False,
-            )
-            st.plotly_chart(sc3, use_container_width=True, config={'displayModeBar': False})
-
-    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-
-    st.markdown('<div class="sec-head">속도 구간별 주행거리 분포</div>',
-                unsafe_allow_html=True)
-    if 'Velocity_mean' in df.columns and 'Distance' in df.columns:
-        bins = [0, 30, 50, 70, 90, 160]
-        labels_bin = ['0-30', '30-50', '50-70', '70-90', '90+']
-        df['속도구간'] = pd.cut(df['Velocity_mean'], bins=bins, labels=labels_bin)
-        box_colors = ['#0a2d5a', '#0e3d7a', BMW_BLUE, BMW_LIGHT, '#7ab8f5']
-        box_fig = go.Figure()
-        for i, grp in enumerate(labels_bin):
-            d = df[df['속도구간'] == grp]['Distance']
-            if len(d) > 0:
-                box_fig.add_trace(go.Box(
-                    y=d, name=f'{grp} km/h',
-                    marker_color=box_colors[i % len(box_colors)],
-                    line_color=BMW_BLUE,
-                ))
-        box_fig.update_layout(
-            height=340, paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            margin=dict(l=10, r=10, t=10, b=10),
-            xaxis={'color': TXT, 'title': '속도 구간'},
-            yaxis={'gridcolor': LINE, 'color': SUB, 'title': '주행거리 (km)'},
-            showlegend=False,
-        )
-        st.plotly_chart(box_fig, use_container_width=True, config={'displayModeBar': False})
-        df.drop(columns=['속도구간'], inplace=True, errors='ignore')
-
-    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-    corr_v = df['Velocity_mean'].corr(df['Distance']) if 'Velocity_mean' in df.columns else 0
-    corr_d = df['Duration'].corr(df['Distance'])      if 'Duration'      in df.columns else 0
-    corr_s = df['SOC_Consumed'].corr(df['Distance'])  if 'SOC_Consumed'  in df.columns else 0
-    st.markdown(f"""
-    <div class="sec-head">주요 인사이트</div>
-    <div class="insight"><strong>속도 ↔ 거리</strong> 상관계수 {corr_v:.3f} —
-    {'강한 양의 상관. 빠를수록 먼 거리를 주행합니다.' if corr_v > 0.5
-     else '약한 상관. 속도보다 주행시간이 더 영향이 큽니다.'}</div>
-    <div class="insight"><strong>주행시간 ↔ 거리</strong> 상관계수 {corr_d:.3f} —
-    {'주행 시간이 거리의 가장 강한 결정 인자입니다.' if corr_d > 0.7
-     else '주행시간과 거리는 상당한 관계를 보입니다.'}</div>
-    <div class="insight"><strong>SOC 소모 ↔ 거리</strong> 상관계수 {corr_s:.3f} —
-    {'배터리를 더 쓸수록 더 먼 거리를 주행합니다.' if corr_s > 0
-     else '음의 상관 — 비효율 구간에서 SOC 소모가 큽니다.'}</div>
-    """, unsafe_allow_html=True)
-
-
-# ════════════════════════════════════════════════════════════════
-# PAGE 7 : 변수 중요도
-# ════════════════════════════════════════════════════════════════
-elif page == "변수 중요도":
-    st.markdown('<div class="bmw-title"> 변수 중요도</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="bmw-sub">CatBoost 피처 중요도 · 주요 변수별 주행거리 민감도 분석</div>',
+elif page == "변수 분석":
+    st.markdown('<div class="bmw-title">변수 분석</div>', unsafe_allow_html=True)
+    st.markdown('<div class="bmw-sub">피처 중요도 · 민감도 분석 · 주행 패턴 인사이트</div>',
                 unsafe_allow_html=True)
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
     col_l, col_r = st.columns([1.2, 1])
 
     with col_l:
-        st.markdown('<div class="sec-head">피처 중요도 (상위 15개)</div>',
-                    unsafe_allow_html=True)
+        st.markdown('<div class="sec-head">피처 중요도 (상위 15개)</div>', unsafe_allow_html=True)
         top15 = importance.head(15).iloc[::-1].copy()
         labels15 = [META[f][0] if f in META else f.replace('_', ' ')
                     for f in top15['Feature']]
         max_imp = top15['Importance'].max()
-        colors_fi = [
-            f'rgba(28,105,212,{0.45 + 0.55 * v / max_imp:.2f})'
-            for v in top15['Importance']
-        ]
+        colors_fi = [f'rgba(28,105,212,{0.45 + 0.55 * v / max_imp:.2f})'
+                     for v in top15['Importance']]
         fi_fig = go.Figure(go.Bar(
             x=top15['Importance'], y=labels15, orientation='h',
             marker_color=colors_fi,
             text=[f'{v:.1f}' for v in top15['Importance']],
-            textposition='outside',
-            textfont={'color': SUB, 'size': 10},
+            textposition='outside', textfont={'color': SUB, 'size': 10},
         ))
         fi_fig.update_layout(
-            height=480, paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
+            height=460, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
             margin=dict(l=10, r=60, t=10, b=10),
             xaxis={'gridcolor': LINE, 'color': SUB, 'title': '중요도'},
             yaxis={'color': TXT, 'tickfont': {'size': 11}},
@@ -1242,60 +1026,53 @@ elif page == "변수 중요도":
         st.plotly_chart(fi_fig, use_container_width=True, config={'displayModeBar': False})
 
     with col_r:
-        st.markdown('<div class="sec-head">상위 변수 해석</div>',
-                    unsafe_allow_html=True)
-        for _, row_fi in importance.head(5).iterrows():
-            fname  = row_fi['Feature']
-            fimp   = row_fi['Importance']
-            flabel = META[fname][0] if fname in META else fname.replace('_', ' ')
-            funit  = META[fname][1] if fname in META else ''
-            pct    = fimp / importance['Importance'].sum() * 100
-            st.markdown(f"""
-            <div class="insight">
-              <strong>{flabel}</strong> ({funit}) —
-              중요도 <strong>{fimp:.1f}</strong> ({pct:.1f}%)
-            </div>
-            """, unsafe_allow_html=True)
-
-        st.markdown('<div style="height:10px"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="sec-head">상위 5개 변수 비중</div>', unsafe_allow_html=True)
         top5_imp = importance.head(5).copy()
-        top5_imp.loc[len(top5_imp)] = {
+        top5_imp = pd.concat([top5_imp, pd.DataFrame([{
             'Feature': '기타',
             'Importance': importance['Importance'].iloc[5:].sum(),
-        }
+        }])], ignore_index=True)
         pie_labels = [META[f][0] if f in META else f.replace('_', ' ')
                       for f in top5_imp['Feature']]
         pie_fig = go.Figure(go.Pie(
-            labels=pie_labels,
-            values=top5_imp['Importance'],
-            hole=0.45,
+            labels=pie_labels, values=top5_imp['Importance'], hole=0.45,
             marker_colors=[BMW_BLUE, BMW_DARK, BMW_LIGHT, '#0d4a8a', '#3d7dca', LINE],
             textfont={'color': TXT, 'size': 11},
         ))
         pie_fig.update_layout(
-            height=280, paper_bgcolor='rgba(0,0,0,0)',
+            height=255, paper_bgcolor='rgba(0,0,0,0)',
             margin=dict(l=0, r=0, t=10, b=0),
             legend={'font': {'color': SUB, 'size': 10}},
         )
         st.plotly_chart(pie_fig, use_container_width=True, config={'displayModeBar': False})
 
-    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-
-    st.markdown('<div class="sec-head">주요 변수 민감도 분석 (다른 조건 고정)</div>',
+        st.markdown('<div class="sec-head" style="margin-top:4px">상위 변수 해석</div>',
+                    unsafe_allow_html=True)
+        for _, row_fi in importance.head(5).iterrows():
+            fname  = row_fi['Feature']
+            fimp   = row_fi['Importance']
+            flabel = META[fname][0] if fname in META else fname.replace('_', ' ')
+            pct    = fimp / importance['Importance'].sum() * 100
+            st.markdown(
+                f'<div class="insight"><strong>{flabel}</strong> — '
+                f'중요도 <strong>{fimp:.1f}</strong> ({pct:.1f}%)</div>',
                 unsafe_allow_html=True)
 
+    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+
+    # ── 민감도 분석 ───────────────────────────────────────────
+    st.markdown('<div class="sec-head">주요 변수 민감도 분석 (다른 조건 고정)</div>',
+                unsafe_allow_html=True)
     top4_feats = [f for f in importance['Feature'].head(4) if f in META][:4]
     if len(top4_feats) >= 2:
         sens_cols = st.columns(min(len(top4_feats), 4))
         base_row  = {f: float(medians.get(f, 0)) for f in cols}
-
         for i, feat in enumerate(top4_feats):
             label, unit, lo, hi, _ = META[feat]
             x_range = np.linspace(lo, hi, 50)
             y_preds = []
             for xv in x_range:
-                r_tmp = dict(base_row)
-                r_tmp[feat] = xv
+                r_tmp = dict(base_row); r_tmp[feat] = xv
                 y_preds.append(float(max(model.predict(pd.DataFrame([r_tmp])[cols])[0], 0)))
             s_fig = go.Figure()
             s_fig.add_trace(go.Scatter(
@@ -1307,8 +1084,7 @@ elif page == "변수 중요도":
                             line_color=AMBER, line_dash='dot', line_width=1.5)
             s_fig.update_layout(
                 title={'text': label, 'font': {'color': TXT, 'size': 12}, 'x': 0.5},
-                height=220, paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
+                height=210, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
                 margin=dict(l=10, r=10, t=35, b=10),
                 xaxis={'gridcolor': LINE, 'color': SUB, 'title': unit},
                 yaxis={'gridcolor': LINE, 'color': SUB, 'title': 'km'},
@@ -1316,6 +1092,75 @@ elif page == "변수 중요도":
             )
             sens_cols[i].plotly_chart(s_fig, use_container_width=True,
                                       config={'displayModeBar': False})
+
+    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+
+    # ── 주행 패턴 인사이트 ────────────────────────────────────
+    st.markdown('<div class="sec-head">주행 패턴 인사이트</div>', unsafe_allow_html=True)
+    ins_l, ins_r = st.columns(2)
+
+    with ins_l:
+        if 'Velocity_mean' in df.columns and 'Distance' in df.columns:
+            sc2 = go.Figure()
+            sc2.add_trace(go.Scatter(
+                x=df['Velocity_mean'], y=df['Distance'], mode='markers',
+                marker={
+                    'color': df['SOC_Consumed'] * 100 if 'SOC_Consumed' in df.columns else BMW_BLUE,
+                    'colorscale': [[0, '#0a2040'], [0.5, BMW_BLUE], [1, '#7ab8f5']],
+                    'size': 5, 'opacity': 0.65,
+                    'colorbar': {'title': 'SOC%', 'tickfont': {'color': SUB}},
+                    'showscale': 'SOC_Consumed' in df.columns,
+                },
+            ))
+            sc2.update_layout(
+                title={'text': '평균 속도 vs 주행거리',
+                       'font': {'color': TXT, 'size': 13}, 'x': 0.03},
+                height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                margin=dict(l=10, r=10, t=40, b=10),
+                xaxis={'gridcolor': LINE, 'color': SUB, 'title': '평균 속도 (km/h)'},
+                yaxis={'gridcolor': LINE, 'color': SUB, 'title': '주행거리 (km)'},
+                showlegend=False,
+            )
+            st.plotly_chart(sc2, use_container_width=True, config={'displayModeBar': False})
+
+    with ins_r:
+        if 'Velocity_mean' in df.columns and 'Distance' in df.columns:
+            bins = [0, 30, 50, 70, 90, 160]
+            labels_bin = ['0-30', '30-50', '50-70', '70-90', '90+']
+            df_tmp = df.copy()
+            df_tmp['속도구간'] = pd.cut(df_tmp['Velocity_mean'], bins=bins, labels=labels_bin)
+            box_colors = ['#0a2d5a', '#0e3d7a', BMW_BLUE, BMW_LIGHT, '#7ab8f5']
+            box_fig = go.Figure()
+            for i, grp in enumerate(labels_bin):
+                d = df_tmp[df_tmp['속도구간'] == grp]['Distance']
+                if len(d) > 0:
+                    box_fig.add_trace(go.Box(
+                        y=d, name=f'{grp} km/h',
+                        marker_color=box_colors[i % len(box_colors)],
+                        line_color=BMW_BLUE,
+                    ))
+            box_fig.update_layout(
+                title={'text': '속도 구간별 주행거리 분포',
+                       'font': {'color': TXT, 'size': 13}, 'x': 0.03},
+                height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                margin=dict(l=10, r=10, t=40, b=10),
+                xaxis={'color': TXT, 'title': '속도 구간'},
+                yaxis={'gridcolor': LINE, 'color': SUB, 'title': '주행거리 (km)'},
+                showlegend=False,
+            )
+            st.plotly_chart(box_fig, use_container_width=True, config={'displayModeBar': False})
+
+    corr_v = df['Velocity_mean'].corr(df['Distance']) if 'Velocity_mean' in df.columns else 0
+    corr_d = df['Duration'].corr(df['Distance'])      if 'Duration'      in df.columns else 0
+    corr_s = df['SOC_Consumed'].corr(df['Distance'])  if 'SOC_Consumed'  in df.columns else 0
+    st.markdown(f"""
+    <div class="insight"><strong>속도 ↔ 거리</strong> 상관계수 {corr_v:.3f} —
+    {'강한 양의 상관. 빠를수록 먼 거리 주행.' if corr_v > 0.5 else '약한 상관.'}</div>
+    <div class="insight"><strong>주행시간 ↔ 거리</strong> 상관계수 {corr_d:.3f} —
+    {'주행시간이 가장 강한 결정 인자.' if corr_d > 0.7 else '상당한 관계.'}</div>
+    <div class="insight"><strong>SOC 소모 ↔ 거리</strong> 상관계수 {corr_s:.3f} —
+    {'배터리를 더 쓸수록 더 먼 거리 주행.' if corr_s > 0 else '음의 상관 — 비효율 구간 주의.'}</div>
+    """, unsafe_allow_html=True)
 
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
     st.caption('데이터: BMW i3 Battery & Heating Data in Real Driving Cycles (FTM, TU München)')
