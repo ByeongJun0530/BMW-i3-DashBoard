@@ -790,8 +790,8 @@ if page == "데이터 현황":
 # ════════════════════════════════════════════════════════════════
 # PAGE 2 : 트립 예측 검증
 # ════════════════════════════════════════════════════════════════
-elif page == "트립 예측 검증":
-    st.markdown('<div class="bmw-title">트립 예측 검증</div>', unsafe_allow_html=True)
+elif page == "트립별 예측 검증":
+    st.markdown('<div class="bmw-title">트립별 예측 검증</div>', unsafe_allow_html=True)
     st.markdown('<div class="bmw-sub">실제 트립의 예측값 vs 실제값 비교 · 오차 분석 · 사이드바에서 트립을 선택하세요</div>',
                 unsafe_allow_html=True)
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
