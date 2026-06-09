@@ -1186,6 +1186,183 @@ elif page == "모델 분석":
     예측의 <strong>50%</strong>는 ±{p50:.1f} km, <strong>80%</strong>는 ±{p80:.1f} km 이내</div>
     """, unsafe_allow_html=True)
 
+    # ── 오차 패턴 분석 ───────────────────────────────────────
+    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+    st.markdown('<div class="sec-head">오차 패턴 분석</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div style="color:{SUB};font-size:.85rem;margin-bottom:14px">'
+        '어떤 주행 조건에서 예측이 어긋나는지 파악합니다 · 전체 데이터 기준</div>',
+        unsafe_allow_html=True)
+
+    if 'Distance' in df.columns:
+        df_ep = df[cols].copy()
+        df_ep['Distance'] = df['Distance'].values
+        df_ep['예측값'] = model.predict(df[cols])
+        df_ep['잔차'] = df_ep['Distance'] - df_ep['예측값']
+        df_ep['절대오차'] = df_ep['잔차'].abs()
+
+        # 구간 구분
+        spd_bins   = [0, 30, 50, 70, 90, 200]
+        spd_labels = ['0–30', '30–50', '50–70', '70–90', '90+']
+        dur_bins   = [0, 15, 30, 60, 300]
+        dur_labels = ['0–15분', '15–30분', '30–60분', '60분+']
+        dist_bins  = [0, 5, 15, 30, 500]
+        dist_labels= ['0–5km', '5–15km', '15–30km', '30km+']
+
+        if 'Velocity_mean' in df_ep.columns:
+            df_ep['속도구간'] = pd.cut(df_ep['Velocity_mean'],
+                                       bins=spd_bins, labels=spd_labels)
+        if 'Duration' in df_ep.columns:
+            df_ep['시간구간'] = pd.cut(df_ep['Duration'],
+                                       bins=dur_bins, labels=dur_labels)
+        df_ep['거리구간'] = pd.cut(df_ep['Distance'],
+                                   bins=dist_bins, labels=dist_labels)
+
+        ep1, ep2 = st.columns(2)
+        bx_pal = ['#0a2d5a', '#0e3d7a', BMW_BLUE, BMW_LIGHT, '#7ab8f5']
+
+        # 속도 구간별 절대 오차
+        with ep1:
+            st.markdown(
+                f'<div style="color:{TXT};font-size:.9rem;font-weight:600;'
+                f'margin-bottom:8px">속도 구간별 절대 오차</div>',
+                unsafe_allow_html=True)
+            fig_ep1 = go.Figure()
+            for i, grp in enumerate(spd_labels):
+                d = df_ep[df_ep['속도구간'] == grp]['절대오차'].dropna()
+                if len(d):
+                    fig_ep1.add_trace(go.Box(
+                        y=d, name=f'{grp} km/h',
+                        marker_color=bx_pal[i % len(bx_pal)],
+                        line_color=BMW_LIGHT, boxmean=True,
+                        boxpoints='all', jitter=0.4, pointpos=0,
+                        marker_size=4,
+                    ))
+            fig_ep1.update_layout(
+                height=320, paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                margin=dict(l=10, r=10, t=10, b=10),
+                xaxis={'color': TXT,
+                       'title': {'text': '평균 속도 구간', 'font': {'size': 10, 'color': SUB}}},
+                yaxis={'gridcolor': LINE, 'color': SUB,
+                       'title': {'text': '절대 오차 (km)', 'font': {'size': 10, 'color': SUB}}},
+                showlegend=False,
+            )
+            st.plotly_chart(fig_ep1, use_container_width=True, config={'displayModeBar': False})
+
+        # 주행 시간 구간별 절대 오차
+        with ep2:
+            st.markdown(
+                f'<div style="color:{TXT};font-size:.9rem;font-weight:600;'
+                f'margin-bottom:8px">주행 시간별 절대 오차</div>',
+                unsafe_allow_html=True)
+            fig_ep2 = go.Figure()
+            for i, grp in enumerate(dur_labels):
+                d = df_ep[df_ep['시간구간'] == grp]['절대오차'].dropna()
+                if len(d):
+                    fig_ep2.add_trace(go.Box(
+                        y=d, name=grp,
+                        marker_color=bx_pal[i % len(bx_pal)],
+                        line_color=BMW_LIGHT, boxmean=True,
+                        boxpoints='all', jitter=0.4, pointpos=0,
+                        marker_size=4,
+                    ))
+            fig_ep2.update_layout(
+                height=320, paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                margin=dict(l=10, r=10, t=10, b=10),
+                xaxis={'color': TXT,
+                       'title': {'text': '주행 시간 구간', 'font': {'size': 10, 'color': SUB}}},
+                yaxis={'gridcolor': LINE, 'color': SUB,
+                       'title': {'text': '절대 오차 (km)', 'font': {'size': 10, 'color': SUB}}},
+                showlegend=False,
+            )
+            st.plotly_chart(fig_ep2, use_container_width=True, config={'displayModeBar': False})
+
+        # 잔차 vs 예측값 산점도 (계통적 편향 확인)
+        st.markdown(
+            f'<div style="color:{TXT};font-size:.9rem;font-weight:600;'
+            f'margin-bottom:8px">잔차 vs 예측값 (계통 편향 확인)</div>',
+            unsafe_allow_html=True)
+        bias_fig = go.Figure()
+        bias_fig.add_trace(go.Scatter(
+            x=df_ep['예측값'], y=df_ep['잔차'], mode='markers',
+            marker={
+                'color': df_ep['Velocity_mean'] if 'Velocity_mean' in df_ep.columns else BMW_BLUE,
+                'colorscale': [[0, '#0a2040'], [0.5, BMW_BLUE], [1, '#7ab8f5']],
+                'size': 7, 'opacity': 0.75,
+                'colorbar': {'title': {'text': '평균속도\n(km/h)',
+                                       'font': {'color': SUB, 'size': 9}},
+                             'tickfont': {'color': SUB, 'size': 8}},
+                'showscale': True,
+            }, name='잔차',
+        ))
+        bias_fig.add_hline(y=0, line_color=AMBER, line_dash='dash',
+                           line_width=1.5, annotation_text='잔차=0',
+                           annotation_font_color=AMBER)
+        bias_fig.update_layout(
+            height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+            margin=dict(l=10, r=80, t=10, b=10),
+            xaxis={'gridcolor': LINE, 'color': SUB,
+                   'title': {'text': '예측 주행거리 (km)', 'font': {'size': 10, 'color': SUB}}},
+            yaxis={'gridcolor': LINE, 'color': SUB,
+                   'title': {'text': '잔차 (실제–예측) km', 'font': {'size': 10, 'color': SUB}}},
+            showlegend=False,
+        )
+        st.plotly_chart(bias_fig, use_container_width=True, config={'displayModeBar': False})
+
+        # 구간별 RMSE 요약 바차트
+        st.markdown(
+            f'<div style="color:{TXT};font-size:.9rem;font-weight:600;'
+            f'margin-bottom:8px">주행거리 구간별 RMSE</div>',
+            unsafe_allow_html=True)
+        rmse_rows = []
+        for grp in dist_labels:
+            sub = df_ep[df_ep['거리구간'] == grp]['잔차'].dropna()
+            if len(sub) >= 2:
+                rmse_rows.append({
+                    '구간': grp,
+                    'RMSE': float((sub ** 2).mean() ** 0.5),
+                    'N': len(sub),
+                })
+        if rmse_rows:
+            df_rmse_ep = pd.DataFrame(rmse_rows)
+            bar_colors_ep = [BMW_BLUE if v < df_ep['절대오차'].mean() else RED
+                             for v in df_rmse_ep['RMSE']]
+            rmse_bar = go.Figure(go.Bar(
+                x=df_rmse_ep['구간'], y=df_rmse_ep['RMSE'],
+                marker_color=bar_colors_ep,
+                text=[f'{v:.2f} km\n(n={n})' for v, n in
+                      zip(df_rmse_ep['RMSE'], df_rmse_ep['N'])],
+                textposition='outside', textfont={'color': TXT, 'size': 10},
+            ))
+            rmse_bar.add_hline(
+                y=float(df_ep['절대오차'].mean()),
+                line_color=AMBER, line_dash='dash', line_width=1.5,
+                annotation_text=f'전체 평균 MAE {df_ep["절대오차"].mean():.2f} km',
+                annotation_font_color=AMBER, annotation_font_size=9,
+            )
+            rmse_bar.update_layout(
+                height=260, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                margin=dict(l=10, r=10, t=10, b=10),
+                xaxis={'color': TXT},
+                yaxis={'gridcolor': LINE, 'color': SUB,
+                       'title': {'text': 'RMSE (km)', 'font': {'size': 10, 'color': SUB}},
+                       'range': [0, df_rmse_ep['RMSE'].max() * 1.35]},
+                showlegend=False,
+            )
+            st.plotly_chart(rmse_bar, use_container_width=True,
+                            config={'displayModeBar': False})
+            # 인사이트
+            worst = df_rmse_ep.loc[df_rmse_ep['RMSE'].idxmax()]
+            best  = df_rmse_ep.loc[df_rmse_ep['RMSE'].idxmin()]
+            st.markdown(f"""
+            <div class="insight">
+              가장 오차가 큰 구간: <strong>{worst['구간']}</strong> (RMSE {worst['RMSE']:.2f} km) ·
+              가장 정확한 구간: <strong style="color:{GREEN}">{best['구간']}</strong> (RMSE {best['RMSE']:.2f} km)
+            </div>
+            """, unsafe_allow_html=True)
+
     # ── Optuna / GridSearch 튜닝 비교 ────────────────────────
     _, df_opt = load_model_comparison()
 
