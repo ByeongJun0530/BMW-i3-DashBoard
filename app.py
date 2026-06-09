@@ -977,12 +977,14 @@ elif page == "주행거리 예측":
                 _val = float(_feats_up.get(feat, float(medians.get(feat, 0))))
                 if feat == 'SOC_Consumed':
                     _val = _val * 100
-                if feat in META:
+                if feat in PRIMARY and feat in META:
+                    # PRIMARY: 슬라이더가 META 범위를 그대로 사용
                     _, _, _lo, _hi, _ = META[feat]
                     _val = float(np.clip(_val, _lo, _hi))
                 else:
+                    # 고급 슬라이더: 범위가 max(median*2.5, median+1) — 여기에 맞춰 클리핑
                     _med = float(medians.get(feat, 0))
-                    _hi2 = max(_med * 2.5, _med + 1)
+                    _hi2 = float(max(_med * 2.5, _med + 1))
                     _val = float(np.clip(_val, 0.0, _hi2))
                 st.session_state[f'pred_{feat}'] = _val
         else:
