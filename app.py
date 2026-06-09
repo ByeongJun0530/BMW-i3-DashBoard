@@ -302,7 +302,7 @@ st.markdown(f"""
    color:{TXT}; font-family:'Inter',sans-serif;
  }}
  #MainMenu, footer, header {{ visibility:hidden; }}
- [data-testid="collapsedControl"] {{ visibility:visible; }}
+ [data-testid="collapsedControl"] {{ display:none !important; }}
  .block-container {{ padding-top:1.5rem; max-width:1440px; }}
 
  /* 사이드바 배경 */
