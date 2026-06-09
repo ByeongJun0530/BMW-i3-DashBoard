@@ -937,8 +937,72 @@ elif page == "트립별 예측 검증":
 # ════════════════════════════════════════════════════════════════
 elif page == "주행거리 예측":
     st.markdown('<div class="bmw-title">주행거리 예측</div>', unsafe_allow_html=True)
-    st.markdown('<div class="bmw-sub">슬라이더로 주행 조건을 설정하면 AI가 주행거리를 실시간 예측합니다</div>',
+    st.markdown('<div class="bmw-sub">슬라이더로 주행 조건을 설정하거나 트립 CSV를 업로드하면 AI가 주행거리를 실시간 예측합니다</div>',
                 unsafe_allow_html=True)
+    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+
+    # ── CSV 업로드 ───────────────────────────────────────────
+    up_col, reset_col = st.columns([3, 1])
+    with up_col:
+        uploaded_pred = st.file_uploader(
+            '트립 CSV 업로드 (선택) — 업로드 시 슬라이더 자동 설정됩니다',
+            type=['csv'], key='pred_csv_upload', label_visibility='visible',
+        )
+    with reset_col:
+        st.markdown('<div style="height:28px"></div>', unsafe_allow_html=True)
+        if st.button('슬라이더 초기화', key='pred_reset'):
+            for feat in cols:
+                st.session_state.pop(f'pred_{feat}', None)
+            st.rerun()
+
+    _upload_summary = None
+    if uploaded_pred is not None:
+        _df_up = None
+        for _enc in ['utf-8', 'latin-1', 'cp1252']:
+            try:
+                uploaded_pred.seek(0)
+                _df_try = pd.read_csv(uploaded_pred, sep=';', encoding=_enc)
+                if _df_try.shape[1] >= 5:
+                    _df_up = _df_try
+                    break
+            except Exception:
+                continue
+        if _df_up is not None and not _df_up.empty:
+            _feats_up, _dist_up, _soc_s_up, _soc_e_up = compute_trip_features(_df_up)
+            _upload_summary = (_feats_up, _dist_up, _soc_s_up, _soc_e_up)
+
+            for feat in cols:
+                _val = float(_feats_up.get(feat, float(medians.get(feat, 0))))
+                if feat == 'SOC_Consumed':
+                    _val = _val * 100
+                if feat in META:
+                    _, _, _lo, _hi, _ = META[feat]
+                    _val = float(np.clip(_val, _lo, _hi))
+                else:
+                    _med = float(medians.get(feat, 0))
+                    _hi2 = max(_med * 2.5, _med + 1)
+                    _val = float(np.clip(_val, 0.0, _hi2))
+                st.session_state[f'pred_{feat}'] = _val
+        else:
+            st.error('CSV 파싱 실패 — 세미콜론(;) 구분 파일인지 확인하세요.')
+
+    if _upload_summary:
+        _feats_up, _dist_up, _soc_s_up, _soc_e_up = _upload_summary
+        us1, us2, us3, us4, us5 = st.columns(5)
+        for _uc, _uv, _ul in [
+            (us1, f'{_dist_up:.1f} km',                       '실제 주행거리'),
+            (us2, f'{_feats_up["Duration"]:.1f} min',         '주행 시간'),
+            (us3, f'{_feats_up["Velocity_mean"]:.1f} km/h',   '평균 속도'),
+            (us4, f'{_feats_up["SOC_Consumed"]*100:.1f} %',   'SOC 소모'),
+            (us5, f'{_soc_s_up:.0f}% → {_soc_e_up:.0f}%',    'SoC 범위'),
+        ]:
+            _uc.markdown(
+                f'<div class="kpi" style="border-color:{BMW_BLUE}">'
+                f'<div class="v" style="font-size:1.2rem">{_uv}</div>'
+                f'<div class="l">{_ul}</div></div>',
+                unsafe_allow_html=True)
+        st.markdown('<div style="height:10px"></div>', unsafe_allow_html=True)
+
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
     left, right = st.columns([1.1, 1])
@@ -956,7 +1020,8 @@ elif page == "주행거리 예측":
                 default = default * 100
             default = float(np.clip(default, lo, hi))
             tgt = c1 if i % 2 == 0 else c2
-            inputs[feat] = tgt.slider(f'{label} ({unit})', lo, hi, default, step)
+            inputs[feat] = tgt.slider(f'{label} ({unit})', lo, hi, default, step,
+                                       key=f'pred_{feat}')
 
         with st.expander('고급 변수 (나머지 모델 입력값)'):
             for feat in cols:
@@ -965,7 +1030,8 @@ elif page == "주행거리 예측":
                 label = feat.replace('_', ' ')
                 med = float(medians.get(feat, 0))
                 lo2, hi2 = 0.0, max(med * 2.5, med + 1)
-                inputs[feat] = st.slider(label, float(lo2), float(hi2), float(med))
+                inputs[feat] = st.slider(label, float(lo2), float(hi2), float(med),
+                                          key=f'pred_{feat}')
 
     row = {}
     for feat in cols:
