@@ -405,7 +405,7 @@ with st.sidebar:
 
     page = st.radio(
         "페이지 선택",
-        ["주행거리 예측", "데이터 현황", "모델 분석", "변수 분석", "트립 예측 검증"],
+        ["주행거리 예측", "트립별 예측 검증", "데이터 현황", "모델 분석", "변수 분석"],
         label_visibility="collapsed",
     )
 
@@ -414,7 +414,7 @@ with st.sidebar:
     selected_trip = None
     selected_data_trip = "전체"
 
-    if page == "트립 예측 검증":
+    if page == "트립별 예측 검증":
         if trip_list:
             st.markdown(
                 f'<div style="color:{SUB};font-size:.82rem;font-weight:600;'
