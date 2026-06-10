@@ -21,17 +21,22 @@ except Exception:
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 
-LEAKAGE_COLS = {'Duration', 'SOC_Consumed', 'Battery_State_of_Charge_End', 'Battery_Current_max'}
+LEAKAGE_COLS = {'Duration', 'SOC_Consumed', 'Battery_State_of_Charge_End'}
 
+# SHAP 기반 최종 선택 피쳐 (13개)
 FEATURES = [
-    'Battery_Temperature_std', 'Velocity_mean',
-    'Battery_Temperature_diff_max', 'Longitudinal_Acceleration_diff_std',
-    'Accel_abs_mean', 'Velocity_diff_std', 'Longitudinal_Acceleration_std',
-    'Velocity_std', 'Heating_Power_CAN_std',
-    'Heating_Power_CAN_mean', 'Accel_abs_std', 'Battery_Current_std',
-    'Battery_Power_mean', 'Accel_abs_max', 'Ambient_Temperature_std',
-    'Velocity_max', 'Battery_Voltage_mean',
+    'SoC_lag1_std', 'Elevation_MA3_std', 'Battery_Current_max',
+    'Velocity_mean', 'Throttle_lag1_std', 'Battery_Temperature_diff_mean',
+    'Route_Area_Munich_East', 'Weather_rainy', 'AirCon_Power_lag1_mean',
+    'Throttle_lag1_mean', 'Route_Area_FTMRoute_2x',
+    'Route_Area_Highway', 'Route_Area_Munich_North_Fast_Charging',
 ]
+
+CAT_FEATURES = {
+    'Route_Area_Munich_East', 'Weather_rainy', 'Route_Area_FTMRoute_2x',
+    'Route_Area_Highway', 'Route_Area_Munich_North_Fast_Charging',
+}
+
 TARGET = 'Distance'
 
 BEST_PARAMS = {
@@ -44,27 +49,19 @@ BEST_PARAMS = {
 }
 
 META = {
-    'Velocity_mean':                    ('평균 속도',           'km/h', 0.0, 110.0, 1.0),
-    'Velocity_max':                     ('최고 속도',           'km/h', 0.0, 160.0, 1.0),
-    'Velocity_std':                     ('속도 표준편차',       'km/h', 0.0, 50.0,  0.5),
-    'Velocity_diff_std':                ('속도 변화 편차',      'km/h', 0.0, 10.0,  0.1),
-    'Accel_abs_mean':                   ('평균 가속도',         'm/s²', 0.0, 2.0,   0.05),
-    'Accel_abs_std':                    ('가속도 편차',         'm/s²', 0.0, 1.5,   0.05),
-    'Accel_abs_max':                    ('최대 가속도',         'm/s²', 0.0, 5.0,   0.1),
-    'Longitudinal_Acceleration_std':    ('종방향 가속 편차',    'm/s²', 0.0, 3.0,   0.05),
-    'Longitudinal_Acceleration_diff_std':('종방향 가속 변화 편차','m/s²',0.0, 2.0,  0.05),
-    'Heating_Power_CAN_mean':           ('평균 난방 출력',      'kW',   0.0, 6.0,   0.1),
-    'Heating_Power_CAN_std':            ('난방 출력 편차',      'kW',   0.0, 3.0,   0.1),
-    'Battery_Power_mean':               ('평균 배터리 출력',    'kW',   0.0, 30.0,  0.5),
-    'Battery_Temperature_std':          ('배터리 온도 변동',    '°C',   0.0, 6.0,   0.1),
-    'Battery_Temperature_diff_max':     ('배터리 온도 최대변화','°C',   0.0, 10.0,  0.1),
-    'Battery_Current_std':              ('배터리 전류 편차',    'A',    0.0, 50.0,  1.0),
-    'Battery_Voltage_mean':             ('평균 배터리 전압',    'V',    300.0,420.0, 1.0),
-    'Ambient_Temperature_std':          ('외기온 변동',         '°C',   0.0, 4.0,   0.1),
+    'SoC_lag1_std':                  ('SoC 변화 편차 (lag1)',        '%',    0.0,  20.0,  0.1),
+    'Elevation_MA3_std':             ('고도 이동평균 편차 (MA3)',     'm',    0.0, 100.0,  0.5),
+    'Battery_Current_max':           ('배터리 최대 전류',             'A',    0.0, 200.0,  1.0),
+    'Velocity_mean':                 ('평균 속도',                   'km/h', 0.0, 110.0,  1.0),
+    'Throttle_lag1_std':             ('스로틀 변화 편차 (lag1)',      '%',    0.0,  40.0,  0.5),
+    'Battery_Temperature_diff_mean': ('배터리 온도 변화 평균',        '°C', -2.0,   5.0,  0.05),
+    'AirCon_Power_lag1_mean':        ('에어컨 출력 평균 (lag1)',      'kW',   0.0,   5.0,  0.1),
+    'Throttle_lag1_mean':            ('스로틀 평균 (lag1)',           '%',    0.0,  80.0,  1.0),
 }
-PRIMARY = ['Velocity_mean', 'Velocity_max', 'Velocity_std', 'Accel_abs_mean',
-           'Heating_Power_CAN_mean', 'Battery_Power_mean',
-           'Battery_Temperature_std', 'Battery_Voltage_mean']
+
+PRIMARY = ['Velocity_mean', 'Battery_Current_max', 'SoC_lag1_std',
+           'Throttle_lag1_mean', 'AirCon_Power_lag1_mean',
+           'Battery_Temperature_diff_mean', 'Elevation_MA3_std', 'Throttle_lag1_std']
 
 BMW_BLUE  = '#1C69D4'
 BMW_DARK  = '#0A3D91'
@@ -83,45 +80,113 @@ RED       = '#E84040'
 @st.cache_data(show_spinner=False)
 def make_synthetic(n=500, seed=42):
     rng = np.random.default_rng(seed)
-    vmean = rng.uniform(18, 95, n)
-    batt_power = rng.uniform(2, 25, n)
-    # Distance from velocity and battery power — no leakage from Duration/SOC
-    dist = (vmean * 0.35 + batt_power * 1.8) * rng.normal(1, 0.10, n)
+    vmean        = rng.uniform(18, 95, n)
+    batt_curr_max= rng.uniform(30, 200, n)
+    thr_mean     = rng.uniform(5, 60, n)
+    thr_std      = rng.uniform(2, 30, n)
+    soc_diff_std = rng.uniform(0.1, 15, n)
+    elev_ma3_std = rng.uniform(0, 80, n)
+    bt_diff_mean = rng.uniform(-0.5, 2.0, n)
+    aircon_mean  = rng.uniform(0, 4.0, n)
+
+    highway  = (rng.random(n) < 0.20).astype(float)
+    rainy    = (rng.random(n) < 0.15).astype(float)
+    ftm_2x   = (rng.random(n) < 0.15).astype(float)
+    muc_east = (rng.random(n) < 0.30).astype(float)
+    muc_n_fc = (rng.random(n) < 0.10).astype(float)
+
+    dist = (
+        vmean * 0.32 + batt_curr_max * 0.06 + thr_mean * 0.12 +
+        highway * 18.0 + rainy * (-5.0) + aircon_mean * (-1.5)
+    ) * rng.normal(1, 0.10, n)
     dist = np.clip(dist, 1.5, None)
-    # Duration and SOC kept as columns for display only (not in FEATURES)
     dur = dist / np.clip(vmean, 10, None) * 60 * rng.normal(1, 0.05, n)
     soc = np.clip(dist / 120 + rng.normal(0, 0.02, n), 0.01, 0.6)
-    df = pd.DataFrame({
+
+    return pd.DataFrame({
         'Distance': dist, 'Duration': dur, 'SOC_Consumed': soc,
-        'Velocity_mean': vmean,
-        'Velocity_max': np.clip(vmean * rng.uniform(1.4, 2.2, n), vmean, 160),
-        'Velocity_std': vmean * rng.uniform(0.30, 0.60, n),
-        'Battery_Temperature_std': rng.uniform(0.3, 5.0, n),
-        'Battery_Temperature_diff_max': rng.uniform(0.1, 2.0, n),
-        'Longitudinal_Acceleration_diff_std': rng.uniform(0.05, 0.6, n),
-        'Accel_abs_mean': rng.uniform(0.2, 1.2, n),
-        'Velocity_diff_std': rng.uniform(0.5, 4.0, n),
-        'Longitudinal_Acceleration_std': rng.uniform(0.2, 1.0, n),
-        'Battery_State_of_Charge_End': np.clip(0.9 - soc + rng.normal(0, 0.05, n), 0.05, 0.95),
-        'Heating_Power_CAN_std': rng.uniform(0, 2.0, n),
-        'Heating_Power_CAN_mean': rng.uniform(0, 5.0, n),
-        'Accel_abs_std': rng.uniform(0.2, 1.0, n),
-        'Battery_Current_std': rng.uniform(10, 60, n),
-        'Battery_Power_mean': batt_power,
-        'Accel_abs_max': rng.uniform(1, 4, n),
-        'Ambient_Temperature_std': rng.uniform(0.1, 3.0, n),
-        'Battery_Voltage_mean': rng.uniform(330, 400, n),
+        'Velocity_mean':                 vmean,
+        'Battery_Current_max':           batt_curr_max,
+        'Throttle_lag1_mean':            thr_mean,
+        'Throttle_lag1_std':             thr_std,
+        'SoC_lag1_std':                  soc_diff_std,
+        'Elevation_MA3_std':             elev_ma3_std,
+        'Battery_Temperature_diff_mean': bt_diff_mean,
+        'AirCon_Power_lag1_mean':        aircon_mean,
+        'Route_Area_Highway':            highway,
+        'Weather_rainy':                 rainy,
+        'Route_Area_FTMRoute_2x':        ftm_2x,
+        'Route_Area_Munich_East':        muc_east,
+        'Route_Area_Munich_North_Fast_Charging': muc_n_fc,
     })
-    return df
 
 
 @st.cache_data(show_spinner=False)
 def load_data():
     candidates = ['df_final_vif.csv', 'data/df_final_vif.csv', './df_final_vif.csv']
+    df_main = None
     for p in candidates:
         if os.path.exists(p):
-            return pd.read_csv(p), 'real'
-    return make_synthetic(), 'synthetic'
+            df_main = pd.read_csv(p)
+            break
+
+    if df_main is None:
+        return make_synthetic(), 'synthetic'
+
+    # AirCon_Power_mean → AirCon_Power_lag1_mean (proxy)
+    if 'AirCon_Power_mean' in df_main.columns and 'AirCon_Power_lag1_mean' not in df_main.columns:
+        df_main['AirCon_Power_lag1_mean'] = df_main['AirCon_Power_mean']
+
+    # Elevation, Throttle, SoC lag/MA features from raw trip CSVs (순서 매칭)
+    data_dir = 'data'
+    trip_files = (sorted([f for f in os.listdir(data_dir) if f.lower().endswith('.csv')])
+                  if os.path.exists(data_dir) else [])
+
+    if len(trip_files) == len(df_main):
+        soc_lag1, elev_ma3, thr_std, thr_mean = [], [], [], []
+        for fname in trip_files:
+            try:
+                df_raw = None
+                for enc in ['utf-8', 'latin-1', 'cp1252']:
+                    try:
+                        df_raw = pd.read_csv(os.path.join(data_dir, fname), sep=';', encoding=enc)
+                        if df_raw.shape[1] >= 5:
+                            break
+                    except Exception:
+                        continue
+                if df_raw is None or df_raw.empty:
+                    raise ValueError
+
+                soc_col = next((c for c in df_raw.columns
+                                if 'soc [%]' in c.lower()
+                                and not any(x in c.lower() for x in ('max', 'min', 'displayed'))), None)
+                soc_lag1.append(float(pd.to_numeric(df_raw[soc_col], errors='coerce').diff().std())
+                                if soc_col else np.nan)
+
+                elev_col = next((c for c in df_raw.columns if 'elevation' in c.lower()), None)
+                if elev_col:
+                    e = pd.to_numeric(df_raw[elev_col], errors='coerce')
+                    elev_ma3.append(float(e.rolling(3, min_periods=1).mean().std()))
+                else:
+                    elev_ma3.append(np.nan)
+
+                thr_col = next((c for c in df_raw.columns if 'throttle' in c.lower()), None)
+                if thr_col:
+                    thr = pd.to_numeric(df_raw[thr_col], errors='coerce').shift(1)
+                    thr_std.append(float(thr.std()))
+                    thr_mean.append(float(thr.mean()))
+                else:
+                    thr_std.append(np.nan); thr_mean.append(np.nan)
+            except Exception:
+                soc_lag1.append(np.nan); elev_ma3.append(np.nan)
+                thr_std.append(np.nan);  thr_mean.append(np.nan)
+
+        df_main['SoC_lag1_std']       = soc_lag1
+        df_main['Elevation_MA3_std']  = elev_ma3
+        df_main['Throttle_lag1_std']  = thr_std
+        df_main['Throttle_lag1_mean'] = thr_mean
+
+    return df_main, 'real'
 
 
 @st.cache_resource(show_spinner=False)
@@ -129,14 +194,19 @@ def train_model(df_key, df):
     cols = [c for c in FEATURES if c in df.columns]
     X = df[cols].copy()
     y = df[TARGET].copy()
+    # NaN이 있는 행 제거 (일부 lag/MA 피쳐가 없는 경우 대비)
+    mask = X.notna().all(axis=1) & y.notna()
+    X, y = X[mask], y[mask]
     Xtr, Xte, ytr, yte = train_test_split(X, y, test_size=0.2, random_state=42)
     if HAS_CATBOOST:
+        cat_idx = [i for i, c in enumerate(cols) if c in CAT_FEATURES]
         model = CatBoostRegressor(**BEST_PARAMS, loss_function='RMSE',
                                   random_seed=42, verbose=False)
+        model.fit(Xtr, ytr, cat_features=cat_idx if cat_idx else None)
     else:
         model = GradientBoostingRegressor(n_estimators=400, max_depth=3,
                                           learning_rate=0.05, random_state=42)
-    model.fit(Xtr, ytr)
+        model.fit(Xtr, ytr)
     pred_te = model.predict(Xte)
     metrics = {
         'R2': r2_score(yte, pred_te),
@@ -187,58 +257,54 @@ def _get_col(df, keywords, exclude=None):
     return None
 
 
-def compute_trip_features(df):
+def compute_trip_features(df, route_area=None, weather_rainy=0):
     def safe(s, default=0.0):
         return s if s is not None else pd.Series([default] * len(df))
 
-    t   = safe(_get_col(df, ['time [s]', 'time']), 0.0)
-    v   = safe(_get_col(df, ['velocity']), 0.0)
-    a   = safe(_get_col(df, ['longitudinal acceleration']), 0.0)
-    bt  = safe(_get_col(df, ['battery temperature'],
-                        exclude=['max', 'min', 'coolant', 'exchanger', 'heater', 'cabin', 'inlet']), 20.0)
-    soc = safe(_get_col(df, ['soc [%]'], exclude=['max', 'min', 'displayed']), 50.0)
-    ht  = safe(_get_col(df, ['heating power can']), 0.0)
-    bc  = safe(_get_col(df, ['battery current']), 0.0)
-    bv  = safe(_get_col(df, ['battery voltage']), 370.0)
-    at  = safe(_get_col(df, ['ambient temperature']), 15.0)
+    t    = safe(_get_col(df, ['time [s]', 'time']), 0.0)
+    v    = safe(_get_col(df, ['velocity']), 0.0)
+    bt   = safe(_get_col(df, ['battery temperature'],
+                         exclude=['max', 'min', 'coolant', 'exchanger', 'heater', 'cabin', 'inlet']), 20.0)
+    soc  = safe(_get_col(df, ['soc [%]'], exclude=['max', 'min', 'displayed']), 50.0)
+    bc   = safe(_get_col(df, ['battery current']), 0.0)
+    ac   = safe(_get_col(df, ['aircon power', 'air con']), 0.0)
+    thr  = safe(_get_col(df, ['throttle']), 0.0)
+    elev = safe(_get_col(df, ['elevation']), 0.0)
 
-    dur            = float((t.max() - t.min()) / 60)
-    vel_mean       = float(v.mean())
-    vel_std        = float(v.std())
-    vel_max        = float(v.max())
-    vel_diff_std   = float(v.diff().std())
-    a_abs          = a.abs()
-    accel_abs_mean = float(a_abs.mean())
-    accel_abs_std  = float(a_abs.std())
-    accel_abs_max  = float(a_abs.max())
-    accel_std      = float(a.std())
-    accel_diff_std = float(a.diff().std())
-    batt_temp_std      = float(bt.std())
-    batt_temp_diff_max = float(bt.diff().abs().max()) if len(bt) > 1 else 0.0
-    soc_start    = float(soc.dropna().iloc[0])  if len(soc.dropna()) > 0 else 50.0
-    soc_end_val  = float(soc.dropna().iloc[-1]) if len(soc.dropna()) > 0 else 40.0
+    dur       = float((t.max() - t.min()) / 60)
+    vel_mean  = float(v.mean())
+    soc_clean = soc.dropna()
+    soc_start = float(soc_clean.iloc[0])  if len(soc_clean) > 0 else 50.0
+    soc_end_val = float(soc_clean.iloc[-1]) if len(soc_clean) > 0 else 40.0
     soc_consumed = max(0.0, (soc_start - soc_end_val) / 100)
-    soc_end      = soc_end_val / 100
-    heat_mean = float(ht.mean()); heat_std = float(ht.std())
-    batt_curr_std   = float(bc.std())
-    batt_volt_mean  = float(bv.mean())
-    batt_power_mean = float((bv * bc / 1000).mean())
-    amb_temp_std    = float(at.std())
+
+    batt_curr_max        = float(bc.max())
+    soc_lag1_std         = float(soc.diff().std())
+    elev_ma3_std         = float(elev.rolling(3, min_periods=1).mean().std())
+    thr_lag1_std         = float(thr.shift(1).std())
+    thr_lag1_mean        = float(thr.shift(1).mean())
+    bt_diff_mean         = float(bt.diff().mean())
+    aircon_lag1_mean     = float(ac.shift(1).mean())
+
     dt = t.diff().fillna(0.0)
     actual_dist = float((v * dt / 3600).sum())
 
+    ra = route_area or {}
     feats = {
         'Duration': dur, 'SOC_Consumed': soc_consumed,
-        'Battery_Temperature_std': batt_temp_std, 'Velocity_mean': vel_mean,
-        'Battery_Temperature_diff_max': batt_temp_diff_max,
-        'Longitudinal_Acceleration_diff_std': accel_diff_std,
-        'Accel_abs_mean': accel_abs_mean, 'Velocity_diff_std': vel_diff_std,
-        'Longitudinal_Acceleration_std': accel_std, 'Velocity_std': vel_std,
-        'Battery_State_of_Charge_End': soc_end, 'Heating_Power_CAN_std': heat_std,
-        'Heating_Power_CAN_mean': heat_mean, 'Accel_abs_std': accel_abs_std,
-        'Battery_Current_std': batt_curr_std, 'Battery_Power_mean': batt_power_mean,
-        'Accel_abs_max': accel_abs_max, 'Ambient_Temperature_std': amb_temp_std,
-        'Velocity_max': vel_max, 'Battery_Voltage_mean': batt_volt_mean,
+        'Velocity_mean':                 vel_mean,
+        'Battery_Current_max':           batt_curr_max,
+        'SoC_lag1_std':                  soc_lag1_std,
+        'Elevation_MA3_std':             elev_ma3_std,
+        'Throttle_lag1_std':             thr_lag1_std,
+        'Battery_Temperature_diff_mean': bt_diff_mean,
+        'AirCon_Power_lag1_mean':        aircon_lag1_mean,
+        'Throttle_lag1_mean':            thr_lag1_mean,
+        'Route_Area_Munich_East':             float(ra.get('Munich_East', 0)),
+        'Route_Area_FTMRoute_2x':             float(ra.get('FTMRoute_2x', 0)),
+        'Route_Area_Highway':                 float(ra.get('Highway', 0)),
+        'Route_Area_Munich_North_Fast_Charging': float(ra.get('Munich_North_Fast_Charging', 0)),
+        'Weather_rainy':                 float(weather_rainy),
     }
     return feats, actual_dist, soc_start, soc_end_val
 
@@ -531,9 +597,9 @@ if page == "데이터 현황":
     # ── Tab 1 : 주요 변수 분포 ─────────────────────────────────
     with tab1:
         dist_vars_def = [
-            ('Distance',      '주행거리',  'km'),
-            ('Velocity_mean', '평균 속도', 'km/h'),
-            ('SOC_Consumed',  'SOC 소모',  '%'),
+            ('Distance',           '주행거리',        'km'),
+            ('Velocity_mean',      '평균 속도',       'km/h'),
+            ('Battery_Current_max','배터리 최대 전류', 'A'),
         ]
         dist_vars = [(c, l, u) for c, l, u in dist_vars_def if c in df.columns]
         if dist_vars:
@@ -594,9 +660,9 @@ if page == "데이터 현황":
     # ── Tab 2 : 변화량 분포 ────────────────────────────────────
     with tab2:
         var_vars_def = [
-            ('Velocity_std',            '속도 표준편차',    'km/h'),
-            ('Battery_Temperature_std', '배터리 온도 변동', '°C'),
-            ('Accel_abs_std',           '절대가속 편차',    'm/s²'),
+            ('SoC_lag1_std',                  'SoC 변화 편차 (lag1)', '%'),
+            ('Elevation_MA3_std',             '고도 MA3 편차',        'm'),
+            ('Battery_Temperature_diff_mean', '배터리 온도 변화 평균', '°C'),
         ]
         var_vars = [(c, l, u) for c, l, u in var_vars_def if c in df.columns]
         if var_vars:
@@ -746,9 +812,9 @@ if page == "데이터 현황":
     # ── 상관관계 히트맵 ───────────────────────────────────────
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
     st.markdown('<div class="sec-head">주요 변수 상관관계</div>', unsafe_allow_html=True)
-    heat_cols = ['Distance', 'Duration', 'Velocity_mean', 'Velocity_max',
-                 'SOC_Consumed', 'Accel_abs_mean', 'Battery_Power_mean',
-                 'Heating_Power_CAN_mean']
+    heat_cols = ['Distance', 'Velocity_mean', 'Battery_Current_max',
+                 'SoC_lag1_std', 'Elevation_MA3_std', 'Throttle_lag1_mean',
+                 'AirCon_Power_lag1_mean', 'Battery_Temperature_diff_mean']
     heat_cols = [c for c in heat_cols if c in df.columns]
     corr = df[heat_cols].corr().round(2)
     labels_h = [META[c][0] if c in META else c.replace('_', ' ') for c in corr.columns]
@@ -896,10 +962,10 @@ elif page == "트립별 예측 검증":
          f'<br><span style="font-size:.85rem;color:{SUB}">예측 {pred_dist:.1f} km · 실제 {actual_dist:.1f} km</span>'),
         (i2, '🚗', '주행 특성',
          f'<span style="font-size:1.0rem;font-weight:600;color:{TXT}">{feats["Velocity_mean"]:.1f} km/h</span>'
-         f'<br><span style="font-size:.85rem;color:{SUB}">평균속도 · 최고 {feats["Velocity_max"]:.1f} km/h</span>'),
+         f'<br><span style="font-size:.85rem;color:{SUB}">평균속도 · SoC 편차 {feats["SoC_lag1_std"]:.2f} %</span>'),
         (i3, '🔋', '배터리',
-         f'<span style="font-size:1.0rem;font-weight:600;color:{TXT}">{feats["SOC_Consumed"]*100:.1f}%</span>'
-         f'<br><span style="font-size:.85rem;color:{SUB}">SOC 소모 · 전압 {feats["Battery_Voltage_mean"]:.0f} V</span>'),
+         f'<span style="font-size:1.0rem;font-weight:600;color:{TXT}">{feats["Battery_Current_max"]:.1f} A</span>'
+         f'<br><span style="font-size:.85rem;color:{SUB}">최대 전류 · 에어컨 {feats["AirCon_Power_lag1_mean"]:.2f} kW</span>'),
     ]:
         _col.markdown(
             f'<div style="background:{PANEL};border-radius:10px;padding:14px 16px;'
@@ -979,19 +1045,18 @@ elif page == "주행거리 예측":
             _upload_summary = (_feats_up, _dist_up, _soc_s_up, _soc_e_up)
 
             for feat in cols:
-                _val = float(_feats_up.get(feat, float(medians.get(feat, 0))))
-                if feat == 'SOC_Consumed':
-                    _val = _val * 100
-                if feat in PRIMARY and feat in META:
-                    # PRIMARY: 슬라이더가 META 범위를 그대로 사용
-                    _, _, _lo, _hi, _ = META[feat]
-                    _val = float(np.clip(_val, _lo, _hi))
+                if feat in CAT_FEATURES:
+                    st.session_state[f'pred_{feat}'] = int(_feats_up.get(feat, 0))
                 else:
-                    # 고급 슬라이더: 범위가 max(median*2.5, median+1) — 여기에 맞춰 클리핑
-                    _med = float(medians.get(feat, 0))
-                    _hi2 = float(max(_med * 2.5, _med + 1))
-                    _val = float(np.clip(_val, 0.0, _hi2))
-                st.session_state[f'pred_{feat}'] = _val
+                    _val = float(_feats_up.get(feat, float(medians.get(feat, 0))))
+                    if feat in PRIMARY and feat in META:
+                        _, _, _lo, _hi, _ = META[feat]
+                        _val = float(np.clip(_val, _lo, _hi))
+                    else:
+                        _med = float(medians.get(feat, 0))
+                        _hi2 = float(max(_med * 2.5, _med + 1))
+                        _val = float(np.clip(_val, 0.0, _hi2))
+                    st.session_state[f'pred_{feat}'] = _val
         else:
             st.error('CSV 파싱 실패 — 세미콜론(;) 구분 파일인지 확인하세요.')
 
@@ -999,11 +1064,11 @@ elif page == "주행거리 예측":
         _feats_up, _dist_up, _soc_s_up, _soc_e_up = _upload_summary
         us1, us2, us3, us4, us5 = st.columns(5)
         for _uc, _uv, _ul in [
-            (us1, f'{_dist_up:.1f} km',                       '실제 주행거리'),
-            (us2, f'{_feats_up["Duration"]:.1f} min',         '주행 시간'),
-            (us3, f'{_feats_up["Velocity_mean"]:.1f} km/h',   '평균 속도'),
-            (us4, f'{_feats_up["SOC_Consumed"]*100:.1f} %',   'SOC 소모'),
-            (us5, f'{_soc_s_up:.0f}% → {_soc_e_up:.0f}%',    'SoC 범위'),
+            (us1, f'{_dist_up:.1f} km',                                  '실제 주행거리'),
+            (us2, f'{_feats_up["Velocity_mean"]:.1f} km/h',              '평균 속도'),
+            (us3, f'{_feats_up["Battery_Current_max"]:.1f} A',           '배터리 최대 전류'),
+            (us4, f'{_feats_up["SoC_lag1_std"]:.2f} %',                  'SoC 변화 편차'),
+            (us5, f'{_feats_up["AirCon_Power_lag1_mean"]:.2f} kW',       '에어컨 출력'),
         ]:
             _uc.markdown(
                 f'<div class="kpi" style="border-color:{BMW_BLUE}">'
@@ -1032,29 +1097,29 @@ elif page == "주행거리 예측":
             inputs[feat] = tgt.slider(f'{label} ({unit})', lo, hi, default, step,
                                        key=f'pred_{feat}')
 
-        with st.expander('고급 변수 (나머지 모델 입력값)'):
-            for feat in cols:
-                if feat in PRIMARY:
-                    continue
-                label = feat.replace('_', ' ')
-                med = float(medians.get(feat, 0))
-                lo2, hi2 = 0.0, max(med * 2.5, med + 1)
-                inputs[feat] = st.slider(label, float(lo2), float(hi2), float(med),
-                                          key=f'pred_{feat}')
+        with st.expander('경로 · 날씨 조건'):
+            _cat_labels = {
+                'Route_Area_Munich_East':                '📍 뮌헨 동부',
+                'Route_Area_FTMRoute_2x':                '🔁 FTM 경로 (2배)',
+                'Route_Area_Highway':                    '🛣 고속도로',
+                'Route_Area_Munich_North_Fast_Charging': '⚡ 뮌헨 북부 급속충전',
+                'Weather_rainy':                         '🌧 비 날씨',
+            }
+            _cc1, _cc2 = st.columns(2)
+            for _ci, feat in enumerate([f for f in cols if f in CAT_FEATURES]):
+                _lbl = _cat_labels.get(feat, feat.replace('_', ' '))
+                _def = bool(int(st.session_state.get(f'pred_{feat}', 0)))
+                _tgt = _cc1 if _ci % 2 == 0 else _cc2
+                inputs[feat] = float(_tgt.checkbox(_lbl, value=_def, key=f'pred_{feat}'))
 
-    row = {}
-    for feat in cols:
-        v_val = inputs.get(feat, float(medians.get(feat, 0)))
-        if feat == 'SOC_Consumed':
-            v_val = v_val / 100.0
-        row[feat] = v_val
+    row = {feat: inputs.get(feat, float(medians.get(feat, 0))) for feat in cols}
     X_one = pd.DataFrame([row])[cols]
     pred = float(max(model.predict(X_one)[0], 0.0))
 
-    v_mean  = inputs.get('Velocity_mean', 40)
-    v_max   = inputs.get('Velocity_max', 80)
-    bp_mean = inputs.get('Battery_Power_mean', 10)
-    ht_mean = inputs.get('Heating_Power_CAN_mean', 1.0)
+    v_mean      = inputs.get('Velocity_mean', 40)
+    bc_max_inp  = inputs.get('Battery_Current_max', 80)
+    aircon_inp  = inputs.get('AirCon_Power_lag1_mean', 1.0)
+    soc_std_inp = inputs.get('SoC_lag1_std', 2.0)
 
     with right:
         st.markdown(
@@ -1076,22 +1141,22 @@ elif page == "주행거리 예측":
                            {'range': [40, 75], 'color': '#102a50'},
                            {'range': [75, 110], 'color': '#0f3060'}],
                 'threshold': {'line': {'color': AMBER, 'width': 3}, 'thickness': 0.8,
-                              'value': inputs.get('Velocity_max', v_mean)},
+                              'value': min(v_mean * 1.8, 110)},
             }))
         gauge.update_layout(
             height=220, margin=dict(l=20, r=20, t=10, b=0),
             paper_bgcolor='rgba(0,0,0,0)', font={'color': TXT})
         st.plotly_chart(gauge, use_container_width=True, config={'displayModeBar': False})
-        st.caption(f'파란 바 = 평균 속도 · 주황 눈금 = 최고 속도 ({inputs.get("Velocity_max",0):.0f} km/h)')
+        st.caption(f'파란 바 = 현재 평균 속도 ({v_mean:.0f} km/h)')
 
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
     k1, k2, k3, k4 = st.columns(4)
     for col2, val, lab in [
-        (k1, f'{v_mean:,.1f} km/h',  '평균 속도'),
-        (k2, f'{v_max:,.1f} km/h',   '최고 속도'),
-        (k3, f'{bp_mean:,.1f} kW',   '평균 배터리 출력'),
-        (k4, f'{ht_mean:,.1f} kW',   '평균 난방 출력'),
+        (k1, f'{v_mean:,.1f} km/h',    '평균 속도'),
+        (k2, f'{bc_max_inp:,.1f} A',   '배터리 최대 전류'),
+        (k3, f'{aircon_inp:,.2f} kW',  '에어컨 출력'),
+        (k4, f'{soc_std_inp:,.2f} %',  'SoC 변화 편차'),
     ]:
         col2.markdown(f'<div class="kpi"><div class="v">{val}</div>'
                       f'<div class="l">{lab}</div></div>', unsafe_allow_html=True)
@@ -1147,49 +1212,49 @@ elif page == "주행거리 예측":
         """, unsafe_allow_html=True)
 
     with col_b:
-        st.markdown('<div class="sec-head">배터리 출력 민감도 분석</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sec-head">배터리 최대 전류 민감도 분석</div>', unsafe_allow_html=True)
 
-        bp_range = np.linspace(1, 30, 60)
-        preds_bp = []
-        for bv in bp_range:
-            r_tmp = dict(row); r_tmp['Battery_Power_mean'] = float(bv)
-            preds_bp.append(float(max(model.predict(pd.DataFrame([r_tmp])[cols])[0], 0)))
+        bc_range = np.linspace(10, 200, 60)
+        preds_bc = []
+        for bv in bc_range:
+            r_tmp = dict(row); r_tmp['Battery_Current_max'] = float(bv)
+            preds_bc.append(float(max(model.predict(pd.DataFrame([r_tmp])[cols])[0], 0)))
 
-        bp_slope = (preds_bp[-1] - preds_bp[0]) / (bp_range[-1] - bp_range[0])
-        cur_bp_idx = int(np.argmin(np.abs(bp_range - bp_mean)))
-        cur_pred_at_bp = preds_bp[cur_bp_idx]
+        bc_slope = (preds_bc[-1] - preds_bc[0]) / (bc_range[-1] - bc_range[0])
+        cur_bc_idx = int(np.argmin(np.abs(bc_range - bc_max_inp)))
+        cur_pred_at_bc = preds_bc[cur_bc_idx]
 
-        bp_line = go.Figure()
-        bp_line.add_trace(go.Scatter(
-            x=bp_range, y=preds_bp, mode='lines',
+        bc_line = go.Figure()
+        bc_line.add_trace(go.Scatter(
+            x=bc_range, y=preds_bc, mode='lines',
             line={'color': BMW_BLUE, 'width': 2.5},
             fill='tozeroy', fillcolor='rgba(28,105,212,0.15)',
             showlegend=False,
         ))
-        bp_line.add_trace(go.Scatter(
-            x=[bp_mean], y=[cur_pred_at_bp], mode='markers',
+        bc_line.add_trace(go.Scatter(
+            x=[bc_max_inp], y=[cur_pred_at_bc], mode='markers',
             marker={'color': AMBER, 'size': 10, 'symbol': 'circle',
                     'line': {'color': TXT, 'width': 1.5}},
             showlegend=False,
         ))
-        bp_line.add_vline(x=bp_mean, line_color=AMBER, line_dash='dash', line_width=1.5,
-                          annotation_text=f'현재 {bp_mean:.1f} kW',
+        bc_line.add_vline(x=bc_max_inp, line_color=AMBER, line_dash='dash', line_width=1.5,
+                          annotation_text=f'현재 {bc_max_inp:.0f} A',
                           annotation_font_color=AMBER, annotation_font_size=10)
-        bp_line.update_layout(
+        bc_line.update_layout(
             height=280, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
             margin=dict(l=10, r=10, t=10, b=10),
             xaxis={'gridcolor': LINE, 'color': SUB,
-                   'title': {'text': '평균 배터리 출력 (kW)', 'font': {'size': 11, 'color': SUB}}},
+                   'title': {'text': '배터리 최대 전류 (A)', 'font': {'size': 11, 'color': SUB}}},
             yaxis={'gridcolor': LINE, 'color': SUB,
                    'title': {'text': '예측 주행거리 (km)', 'font': {'size': 11, 'color': SUB}}},
             showlegend=False,
         )
-        st.plotly_chart(bp_line, use_container_width=True, config={'displayModeBar': False})
+        st.plotly_chart(bc_line, use_container_width=True, config={'displayModeBar': False})
         st.markdown(f"""
         <div class="insight">
-          현재 평균 배터리 출력 <strong>{bp_mean:.1f} kW</strong> →
-          예측 <strong style="color:{BMW_LIGHT}">{cur_pred_at_bp:.1f} km</strong>
-          &nbsp;|&nbsp; 출력 1 kW 변화 시 약 <strong>{abs(bp_slope):.1f} km</strong> 차이
+          현재 배터리 최대 전류 <strong>{bc_max_inp:.0f} A</strong> →
+          예측 <strong style="color:{BMW_LIGHT}">{cur_pred_at_bc:.1f} km</strong>
+          &nbsp;|&nbsp; 10 A 변화 시 약 <strong>{abs(bc_slope)*10:.1f} km</strong> 차이
         </div>
         """, unsafe_allow_html=True)
 
@@ -1398,23 +1463,19 @@ elif page == "변수 분석":
     fi_l, fi_r = st.columns([1.6, 1])
 
     FEAT_MEANINGS = {
-        'Battery_Temperature_std':           '배터리 온도 변동은 주행 강도를 나타냅니다',
-        'Velocity_mean':                     '평균 속도가 높을수록 주행 효율에 영향을 줍니다',
-        'Battery_Temperature_diff_max':      '배터리 온도 급변은 과부하 구간을 나타냅니다',
-        'Longitudinal_Acceleration_diff_std':'급격한 가감속 변화가 에너지 소모에 영향을 줍니다',
-        'Accel_abs_mean':                    '평균 가속도가 높을수록 역동적인 주행입니다',
-        'Velocity_diff_std':                 '속도 변화 편차가 크면 불규칙한 주행 패턴입니다',
-        'Longitudinal_Acceleration_std':     '종방향 가속 편차가 주행 안정성을 나타냅니다',
-        'Velocity_std':                      '속도 변동이 클수록 도심/교외 혼합 주행입니다',
-        'Heating_Power_CAN_std':             '난방 출력 변동은 외기온 변화에 따른 에너지 비용입니다',
-        'Heating_Power_CAN_mean':            '평균 난방 출력이 높을수록 배터리 소모가 커집니다',
-        'Battery_Current_std':               '배터리 전류 편차는 회생제동 빈도를 반영합니다',
-        'Battery_Power_mean':                '평균 배터리 출력이 주행 부하를 결정합니다',
-        'Accel_abs_std':                     '가속도 편차가 클수록 가감속이 불규칙합니다',
-        'Ambient_Temperature_std':           '외기온 변동이 클수록 에너지 관리가 어렵습니다',
-        'Velocity_max':                      '최고 속도가 높을수록 순간 전력 소모가 큽니다',
-        'Battery_Voltage_mean':              '평균 전압이 낮으면 배터리 방전 수준을 의미합니다',
-        'Accel_abs_max':                     '최대 가속도는 급가속 여부를 나타냅니다',
+        'SoC_lag1_std':                  'SoC 변화율 편차가 클수록 불안정한 에너지 흐름을 나타냅니다 (SHAP #1)',
+        'Elevation_MA3_std':             '고도 변동(MA3)이 클수록 언덕·경사 구간이 많은 경로입니다 (SHAP #2)',
+        'Battery_Current_max':           '최대 전류는 급가속·고부하 구간의 피크 에너지 소모를 반영합니다 (SHAP #3)',
+        'Velocity_mean':                 '평균 속도가 높을수록 장거리·고속 주행을 의미합니다 (SHAP #4)',
+        'Throttle_lag1_std':             '스로틀 변화 편차가 클수록 가감속이 잦은 주행 패턴입니다 (SHAP #5)',
+        'Battery_Temperature_diff_mean': '배터리 온도 변화 평균은 열 관리 효율을 나타냅니다 (SHAP #6)',
+        'Route_Area_Munich_East':        '뮌헨 동부 경로는 특정 지형·신호 패턴이 주행거리에 영향을 줍니다 (SHAP #7)',
+        'Weather_rainy':                 '강우 시 저속·안전운전으로 에너지 소모 패턴이 달라집니다 (SHAP #8)',
+        'AirCon_Power_lag1_mean':        '에어컨 출력이 높을수록 HVAC 에너지 소모로 주행거리가 감소합니다 (SHAP #9)',
+        'Throttle_lag1_mean':            '평균 스로틀이 높을수록 적극적인 가속으로 에너지 소모가 큽니다 (SHAP #10)',
+        'Route_Area_FTMRoute_2x':        'FTM 반복 경로는 고정된 거리·조건으로 예측 신뢰도를 높입니다 (SHAP #11)',
+        'Route_Area_Highway':            '고속도로 주행은 안정적 속도로 에너지 효율이 달라집니다 (SHAP #12)',
+        'Route_Area_Munich_North_Fast_Charging': '급속충전 경유 경로는 특정 거리 패턴을 나타냅니다 (SHAP #13)',
     }
 
     total_imp = importance['Importance'].sum()
