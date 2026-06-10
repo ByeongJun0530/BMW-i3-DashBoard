@@ -200,6 +200,10 @@ def train_model(df_key, df):
     Xtr, Xte, ytr, yte = train_test_split(X, y, test_size=0.2, random_state=42)
     if HAS_CATBOOST:
         cat_idx = [i for i, c in enumerate(cols) if c in CAT_FEATURES]
+        for _c in CAT_FEATURES:
+            if _c in Xtr.columns:
+                Xtr[_c] = Xtr[_c].astype(int)
+                Xte[_c] = Xte[_c].astype(int)
         model = CatBoostRegressor(**BEST_PARAMS, loss_function='RMSE',
                                   random_seed=42, verbose=False)
         model.fit(Xtr, ytr, cat_features=cat_idx if cat_idx else None)
@@ -896,6 +900,9 @@ elif page == "트립별 예측 검증":
 
     feats, actual_dist, soc_start_pct, soc_end_pct = compute_trip_features(trip_df)
     X_trip = pd.DataFrame([feats])[cols]
+    for _c in CAT_FEATURES:
+        if _c in X_trip.columns:
+            X_trip[_c] = X_trip[_c].astype(int)
     pred_dist = float(max(model.predict(X_trip)[0], 0.0))
     trip_name = selected_trip.replace('.csv', '')
     series_label = ('Series A' if 'TripA' in selected_trip else
@@ -1114,6 +1121,9 @@ elif page == "주행거리 예측":
 
     row = {feat: inputs.get(feat, float(medians.get(feat, 0))) for feat in cols}
     X_one = pd.DataFrame([row])[cols]
+    for _c in CAT_FEATURES:
+        if _c in X_one.columns:
+            X_one[_c] = X_one[_c].astype(int)
     pred = float(max(model.predict(X_one)[0], 0.0))
 
     v_mean      = inputs.get('Velocity_mean', 40)
