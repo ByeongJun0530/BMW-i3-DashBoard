@@ -1104,7 +1104,7 @@ elif page == "주행거리 예측":
 
         # 가속 강도 — 단계 선택
         _THR_OPTS = {'부드럽게 (10%)': 10.0, '보통 (25%)': 25.0,
-                     '활발하게 (45%)': 45.0, '강하게 (65%)': 65.0}
+                     '강하게 (45%)': 45.0, '아주 강하게 (65%)': 65.0}
         if 'Throttle_lag1_mean' in cols:
             _thr_sel = st.select_slider('가속 강도', options=list(_THR_OPTS.keys()),
                                         value='보통 (25%)', key='pred_Throttle_lag1_mean')
