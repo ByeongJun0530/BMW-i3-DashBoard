@@ -744,30 +744,6 @@ elif page == "내 주행 기록":
         )
         st.plotly_chart(bar_fig, use_container_width=True, config={'displayModeBar': False})
 
-        if 'Distance' in df.columns:
-            st.markdown('<div class="sec-head" style="margin-top:8px">전체 기록 대비 위치</div>',
-                        unsafe_allow_html=True)
-            hist_fig = go.Figure()
-            hist_fig.add_trace(go.Histogram(
-                x=df['Distance'], nbinsx=25,
-                marker_color=BMW_BLUE, opacity=0.7, showlegend=False,
-            ))
-            hist_fig.add_vline(x=actual_dist, line_color=GREEN, line_width=2.5,
-                               annotation_text=f'이번 주행 {actual_dist:.0f} km',
-                               annotation_font_color=GREEN, annotation_font_size=10)
-            hist_fig.add_vline(x=float(df['Distance'].mean()), line_color=AMBER,
-                               line_dash='dash', line_width=1.5,
-                               annotation_text=f'평균 {df["Distance"].mean():.0f} km',
-                               annotation_font_color=AMBER, annotation_font_size=10)
-            hist_fig.update_layout(
-                height=200, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                margin=dict(l=10, r=10, t=24, b=30),
-                xaxis={'gridcolor': LINE, 'color': SUB,
-                       'title': {'text': '주행거리 (km)', 'font': {'size': 10, 'color': SUB}}},
-                yaxis={'gridcolor': LINE, 'color': SUB,
-                       'title': {'text': '건수', 'font': {'size': 10, 'color': SUB}}},
-            )
-            st.plotly_chart(hist_fig, use_container_width=True, config={'displayModeBar': False})
 
     t_col = next((c for c in trip_df.columns if 'time' in c.lower()), None)
     v_col = next((c for c in trip_df.columns if 'velocity' in c.lower()), None)
