@@ -1091,18 +1091,27 @@ elif page == "주행거리 예측":
     with left:
         st.markdown('<div class="sec-head">주행 조건 설정</div>', unsafe_allow_html=True)
         inputs = {}
+
+        EASY_FEATS = ['Velocity_mean', 'Throttle_lag1_mean', 'AirCon_Power_lag1_mean']
+        ADV_FEATS  = ['Battery_Current_max', 'SoC_lag1_std', 'Throttle_lag1_std',
+                      'Battery_Temperature_diff_mean', 'Elevation_MA3_std']
+
         c1, c2 = st.columns(2)
-        for i, feat in enumerate(PRIMARY):
-            if feat not in cols:
-                continue
+        for i, feat in enumerate([f for f in EASY_FEATS if f in cols]):
             label, unit, lo, hi, step = META[feat]
-            default = float(medians.get(feat, (lo + hi) / 2))
-            if feat == 'SOC_Consumed':
-                default = default * 100
-            default = float(np.clip(default, lo, hi))
+            default = float(np.clip(float(medians.get(feat, (lo + hi) / 2)), lo, hi))
             tgt = c1 if i % 2 == 0 else c2
             inputs[feat] = tgt.slider(f'{label} ({unit})', lo, hi, default, step,
-                                       key=f'pred_{feat}')
+                                      key=f'pred_{feat}')
+
+        with st.expander('고급 변수 (전문가용)'):
+            a1, a2 = st.columns(2)
+            for i, feat in enumerate([f for f in ADV_FEATS if f in cols]):
+                label, unit, lo, hi, step = META[feat]
+                default = float(np.clip(float(medians.get(feat, (lo + hi) / 2)), lo, hi))
+                tgt = a1 if i % 2 == 0 else a2
+                inputs[feat] = tgt.slider(f'{label} ({unit})', lo, hi, default, step,
+                                          key=f'pred_{feat}')
 
         with st.expander('경로 · 날씨 조건'):
             _cc1, _cc2 = st.columns(2)
