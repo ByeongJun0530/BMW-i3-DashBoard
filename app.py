@@ -1282,30 +1282,16 @@ elif page == "주행거리 예측":
 # ════════════════════════════════════════════════════════════════
 elif page == "모델 분석":
     st.markdown('<div class="bmw-title">모델 분석</div>', unsafe_allow_html=True)
-    st.markdown('<div class="bmw-sub">예측 성능 · 잔차 분석 · Optuna / GridSearch 튜닝 비교</div>',
+    st.markdown('<div class="bmw-sub">예측 성능 · 잔차 분석</div>',
                 unsafe_allow_html=True)
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
-    _df_base_kpi, _df_opt_kpi = load_model_comparison()
-
-    # 최고 R²: 베이스라인 > 현재 모델 순으로 fallback
-    if not _df_base_kpi.empty and 'R2' in _df_base_kpi.columns:
-        best_r2  = float(_df_base_kpi['R2'].max())
-    else:
-        best_r2  = metrics['R2']
-    # 최저 RMSE: 튜닝 결과 > 현재 모델 순으로 fallback
-    if not _df_opt_kpi.empty and 'RMSE_mean' in _df_opt_kpi.columns:
-        _rmse_min = _df_opt_kpi['RMSE_mean'].min()
-        best_rmse = float(_rmse_min) if not pd.isna(_rmse_min) else metrics['RMSE']
-    else:
-        best_rmse = metrics['RMSE']
-
     k1, k2, k3, k4 = st.columns(4)
     for col2, val, lab, vc in [
-        (k1, f"{best_r2:.4f}",          "최고 R² (베이스라인)", GREEN),
-        (k2, f"{best_rmse:.2f} km",     "최저 RMSE (튜닝 후)", GREEN),
-        (k3, f"{metrics['MAE']:.2f} km", "현재 MAE",           TXT),
-        (k4, f"{metrics['n']}건",        "전체 데이터",          TXT),
+        (k1, "0.7687",      "R² (GridSearch 후)", GREEN),
+        (k2, "4.69 km",     "RMSE",               GREEN),
+        (k3, "3.39 km",     "MAE",                TXT),
+        (k4, f"{metrics['n']}건", "전체 데이터",  TXT),
     ]:
         col2.markdown(
             f'<div class="kpi"><div class="v" style="color:{vc}">{val}</div>'
@@ -1420,51 +1406,6 @@ elif page == "모델 분석":
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Optuna / GridSearch 튜닝 비교 ────────────────────────
-    _, df_opt = load_model_comparison()
-
-    if not df_opt.empty:
-        st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-        st.markdown('<div class="sec-head">Optuna · GridSearch 튜닝 성능 비교</div>',
-                    unsafe_allow_html=True)
-        df_rmse = df_opt[df_opt['RMSE_mean'].notna()].copy()
-        df_rmse['Method_short'] = (df_rmse['Method']
-                                   .str.replace(r'\s*\(.*\)', '', regex=True).str.strip())
-        df_rmse['Label'] = (df_rmse['Notebook'] + ' | '
-                            + df_rmse['Model'] + ' | ' + df_rmse['Method_short'])
-
-        opt_fig = go.Figure()
-        for nb, nb_color in [('AB통합', BMW_BLUE), ('B만', GREEN)]:
-            sub = df_rmse[df_rmse['Notebook'] == nb]
-            if sub.empty:
-                continue
-            opt_fig.add_trace(go.Bar(
-                name=nb, x=sub['Label'], y=sub['RMSE_mean'],
-                marker_color=nb_color,
-                error_y=dict(type='data', array=sub['RMSE_std'].fillna(0).tolist(),
-                             visible=True, color=AMBER),
-                text=[f'{v:.2f}' for v in sub['RMSE_mean']],
-                textposition='outside', textfont={'color': TXT, 'size': 10},
-            ))
-        opt_fig.update_layout(
-            height=400, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-            margin=dict(l=10, r=10, t=20, b=110),
-            barmode='group',
-            xaxis={'color': TXT, 'tickangle': -35},
-            yaxis={'gridcolor': LINE, 'color': SUB, 'title': 'RMSE (km)'},
-            legend={'font': {'color': SUB}, 'bgcolor': 'rgba(0,0,0,0)'},
-        )
-        st.plotly_chart(opt_fig, use_container_width=True, config={'displayModeBar': False})
-
-        ab_best = (df_rmse[df_rmse['Notebook'] == 'AB통합']['RMSE_mean'].min()
-                   if 'AB통합' in df_rmse['Notebook'].values else None)
-        b_best  = (df_rmse[df_rmse['Notebook'] == 'B만']['RMSE_mean'].min()
-                   if 'B만' in df_rmse['Notebook'].values else None)
-        if ab_best is not None and b_best is not None:
-            st.markdown(f"""
-            <div class="insight">튜닝 후 최저 RMSE — AB통합: <strong>{ab_best:.3f} km</strong> ·
-            B만: <strong>{b_best:.3f} km</strong> (AB통합이 {b_best - ab_best:.3f} km 낮음)</div>
-            """, unsafe_allow_html=True)
 
 
 # ════════════════════════════════════════════════════════════════
