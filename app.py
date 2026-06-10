@@ -1105,19 +1105,18 @@ elif page == "주행거리 예측":
                                        key=f'pred_{feat}')
 
         with st.expander('경로 · 날씨 조건'):
-            _cat_labels = {
-                'Route_Area_Munich_East':                '📍 뮌헨 동부',
-                'Route_Area_FTMRoute_2x':                '🔁 FTM 경로 (2배)',
-                'Route_Area_Highway':                    '🛣 고속도로',
-                'Route_Area_Munich_North_Fast_Charging': '⚡ 뮌헨 북부 급속충전',
-                'Weather_rainy':                         '🌧 비 날씨',
-            }
             _cc1, _cc2 = st.columns(2)
-            for _ci, feat in enumerate([f for f in cols if f in CAT_FEATURES]):
-                _lbl = _cat_labels.get(feat, feat.replace('_', ' '))
+            _shown = ['Weather_rainy', 'Route_Area_Highway']
+            _shown_labels = {'Weather_rainy': '🌧 비 날씨', 'Route_Area_Highway': '🛣 고속도로'}
+            for _ci, feat in enumerate(_shown):
+                if feat not in cols:
+                    continue
                 _def = bool(int(st.session_state.get(f'pred_{feat}', 0)))
                 _tgt = _cc1 if _ci % 2 == 0 else _cc2
-                inputs[feat] = float(_tgt.checkbox(_lbl, value=_def, key=f'pred_{feat}'))
+                inputs[feat] = float(_tgt.checkbox(_shown_labels[feat], value=_def, key=f'pred_{feat}'))
+            for feat in CAT_FEATURES:
+                if feat not in _shown:
+                    inputs[feat] = 0.0
 
     row = {feat: inputs.get(feat, float(medians.get(feat, 0))) for feat in cols}
     X_one = pd.DataFrame([row])[cols]
