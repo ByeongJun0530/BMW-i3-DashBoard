@@ -21,11 +21,13 @@ except Exception:
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 
+LEAKAGE_COLS = {'Duration', 'SOC_Consumed', 'Battery_State_of_Charge_End', 'Battery_Current_max'}
+
 FEATURES = [
-    'Duration', 'SOC_Consumed', 'Battery_Temperature_std', 'Velocity_mean',
+    'Battery_Temperature_std', 'Velocity_mean',
     'Battery_Temperature_diff_max', 'Longitudinal_Acceleration_diff_std',
     'Accel_abs_mean', 'Velocity_diff_std', 'Longitudinal_Acceleration_std',
-    'Velocity_std', 'Battery_State_of_Charge_End', 'Heating_Power_CAN_std',
+    'Velocity_std', 'Heating_Power_CAN_std',
     'Heating_Power_CAN_mean', 'Accel_abs_std', 'Battery_Current_std',
     'Battery_Power_mean', 'Accel_abs_max', 'Ambient_Temperature_std',
     'Velocity_max', 'Battery_Voltage_mean',
@@ -46,8 +48,6 @@ META = {
     'Velocity_max':                     ('최고 속도',           'km/h', 0.0, 160.0, 1.0),
     'Velocity_std':                     ('속도 표준편차',       'km/h', 0.0, 50.0,  0.5),
     'Velocity_diff_std':                ('속도 변화 편차',      'km/h', 0.0, 10.0,  0.1),
-    'Duration':                         ('주행 시간',           'min',  1.0, 100.0, 0.5),
-    'SOC_Consumed':                     ('배터리 소모량',       '%',    0.0, 60.0,  0.5),
     'Accel_abs_mean':                   ('평균 가속도',         'm/s²', 0.0, 2.0,   0.05),
     'Accel_abs_std':                    ('가속도 편차',         'm/s²', 0.0, 1.5,   0.05),
     'Accel_abs_max':                    ('최대 가속도',         'm/s²', 0.0, 5.0,   0.1),
@@ -60,12 +60,11 @@ META = {
     'Battery_Temperature_diff_max':     ('배터리 온도 최대변화','°C',   0.0, 10.0,  0.1),
     'Battery_Current_std':              ('배터리 전류 편차',    'A',    0.0, 50.0,  1.0),
     'Battery_Voltage_mean':             ('평균 배터리 전압',    'V',    300.0,420.0, 1.0),
-    'Battery_State_of_Charge_End':      ('최종 충전량',         '%',    0.0, 100.0, 1.0),
     'Ambient_Temperature_std':          ('외기온 변동',         '°C',   0.0, 4.0,   0.1),
 }
-PRIMARY = ['Velocity_mean', 'Velocity_max', 'Duration', 'SOC_Consumed',
-           'Accel_abs_mean', 'Heating_Power_CAN_mean', 'Battery_Power_mean',
-           'Battery_Temperature_std']
+PRIMARY = ['Velocity_mean', 'Velocity_max', 'Velocity_std', 'Accel_abs_mean',
+           'Heating_Power_CAN_mean', 'Battery_Power_mean',
+           'Battery_Temperature_std', 'Battery_Voltage_mean']
 
 BMW_BLUE  = '#1C69D4'
 BMW_DARK  = '#0A3D91'
@@ -85,9 +84,12 @@ RED       = '#E84040'
 def make_synthetic(n=500, seed=42):
     rng = np.random.default_rng(seed)
     vmean = rng.uniform(18, 95, n)
-    dur = rng.uniform(5, 95, n)
-    dist = vmean * dur / 60 * rng.normal(1, 0.05, n)
+    batt_power = rng.uniform(2, 25, n)
+    # Distance from velocity and battery power — no leakage from Duration/SOC
+    dist = (vmean * 0.35 + batt_power * 1.8) * rng.normal(1, 0.10, n)
     dist = np.clip(dist, 1.5, None)
+    # Duration and SOC kept as columns for display only (not in FEATURES)
+    dur = dist / np.clip(vmean, 10, None) * 60 * rng.normal(1, 0.05, n)
     soc = np.clip(dist / 120 + rng.normal(0, 0.02, n), 0.01, 0.6)
     df = pd.DataFrame({
         'Distance': dist, 'Duration': dur, 'SOC_Consumed': soc,
@@ -105,7 +107,7 @@ def make_synthetic(n=500, seed=42):
         'Heating_Power_CAN_mean': rng.uniform(0, 5.0, n),
         'Accel_abs_std': rng.uniform(0.2, 1.0, n),
         'Battery_Current_std': rng.uniform(10, 60, n),
-        'Battery_Power_mean': rng.uniform(2, 25, n),
+        'Battery_Power_mean': batt_power,
         'Accel_abs_max': rng.uniform(1, 4, n),
         'Ambient_Temperature_std': rng.uniform(0.1, 3.0, n),
         'Battery_Voltage_mean': rng.uniform(330, 400, n),
@@ -1049,14 +1051,10 @@ elif page == "주행거리 예측":
     X_one = pd.DataFrame([row])[cols]
     pred = float(max(model.predict(X_one)[0], 0.0))
 
-    v_mean    = inputs.get('Velocity_mean', 40)
-    dur       = inputs.get('Duration', 20)
-    soc_pct   = inputs.get('SOC_Consumed', 10)
-    phys_dist = v_mean * dur / 60
-    eff       = pred / soc_pct if soc_pct > 0.1 else 0
-    diff_pct  = (pred - phys_dist) / phys_dist * 100 if phys_dist > 0 else 0
-    arrow     = '▲' if diff_pct >= 0 else '▼'
-    arrow_col = GREEN if diff_pct >= 0 else RED
+    v_mean  = inputs.get('Velocity_mean', 40)
+    v_max   = inputs.get('Velocity_max', 80)
+    bp_mean = inputs.get('Battery_Power_mean', 10)
+    ht_mean = inputs.get('Heating_Power_CAN_mean', 1.0)
 
     with right:
         st.markdown(
@@ -1090,10 +1088,10 @@ elif page == "주행거리 예측":
 
     k1, k2, k3, k4 = st.columns(4)
     for col2, val, lab in [
-        (k1, f'{phys_dist:,.1f} km', '물리식 거리 (v×t)'),
-        (k2, f'{dur:,.0f} min',      '주행 시간'),
-        (k3, f'{soc_pct:,.1f} %',    'SOC 소모'),
-        (k4, f'{eff:,.2f} km/%',     'SOC 효율'),
+        (k1, f'{v_mean:,.1f} km/h',  '평균 속도'),
+        (k2, f'{v_max:,.1f} km/h',   '최고 속도'),
+        (k3, f'{bp_mean:,.1f} kW',   '평균 배터리 출력'),
+        (k4, f'{ht_mean:,.1f} kW',   '평균 난방 출력'),
     ]:
         col2.markdown(f'<div class="kpi"><div class="v">{val}</div>'
                       f'<div class="l">{lab}</div></div>', unsafe_allow_html=True)
@@ -1102,84 +1100,96 @@ elif page == "주행거리 예측":
     col_a, col_b = st.columns(2)
 
     with col_a:
-        st.markdown('<div class="sec-head">모델 예측 vs 물리식</div>', unsafe_allow_html=True)
-        cmp_fig = go.Figure()
-        cmp_fig.add_trace(go.Bar(
-            x=['AI 모델 예측', '물리식 (v×t)'], y=[pred, phys_dist],
-            marker_color=[BMW_BLUE, SUB],
-            text=[f'{pred:.1f} km', f'{phys_dist:.1f} km'],
-            textposition='outside', textfont={'color': TXT, 'size': 13}, width=0.45,
-        ))
-        cmp_fig.update_layout(
-            height=280, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-            margin=dict(l=10, r=10, t=20, b=10),
-            yaxis={'gridcolor': LINE, 'color': SUB, 'title': 'km',
-                   'range': [0, max(pred, phys_dist) * 1.25]},
-            xaxis={'color': TXT},
-        )
-        st.plotly_chart(cmp_fig, use_container_width=True, config={'displayModeBar': False})
+        st.markdown('<div class="sec-head">평균 속도 민감도 분석</div>', unsafe_allow_html=True)
 
-    with col_b:
-        st.markdown('<div class="sec-head">배터리 소모량 민감도 분석</div>', unsafe_allow_html=True)
+        vel_range = np.linspace(10, 110, 50)
+        preds_vel = []
+        for vv in vel_range:
+            r_tmp = dict(row); r_tmp['Velocity_mean'] = float(vv)
+            preds_vel.append(float(max(model.predict(pd.DataFrame([r_tmp])[cols])[0], 0)))
 
-        soc_range = np.linspace(1, 60, 60)
-        preds_soc = []
-        for sv in soc_range:
-            r2_tmp = dict(row); r2_tmp['SOC_Consumed'] = sv / 100.0
-            preds_soc.append(float(max(model.predict(pd.DataFrame([r2_tmp])[cols])[0], 0)))
+        vel_slope = (preds_vel[-1] - preds_vel[0]) / (vel_range[-1] - vel_range[0])
+        cur_vel_idx = int(np.argmin(np.abs(vel_range - v_mean)))
+        cur_pred_at_vel = preds_vel[cur_vel_idx]
 
-        # 기울기: 전체 구간 평균 km/% 변화
-        soc_slope = (preds_soc[-1] - preds_soc[0]) / (soc_range[-1] - soc_range[0])
-
-        # 현재 SOC 위치의 예측값
-        cur_idx = int(np.argmin(np.abs(soc_range - soc_pct)))
-        cur_pred_at_soc = preds_soc[cur_idx]
-
-        soc_line = go.Figure()
-        soc_line.add_trace(go.Scatter(
-            x=soc_range, y=preds_soc, mode='lines',
+        vel_line = go.Figure()
+        vel_line.add_trace(go.Scatter(
+            x=vel_range, y=preds_vel, mode='lines',
             line={'color': BMW_BLUE, 'width': 2.5},
             fill='tozeroy', fillcolor='rgba(28,105,212,0.15)',
-            name='예측 주행거리', showlegend=False,
+            showlegend=False,
         ))
-        # 현재 설정값 마커
-        soc_line.add_trace(go.Scatter(
-            x=[soc_pct], y=[cur_pred_at_soc], mode='markers',
+        vel_line.add_trace(go.Scatter(
+            x=[v_mean], y=[cur_pred_at_vel], mode='markers',
             marker={'color': AMBER, 'size': 10, 'symbol': 'circle',
                     'line': {'color': TXT, 'width': 1.5}},
-            name='현재 설정', showlegend=False,
+            showlegend=False,
         ))
-        soc_line.add_vline(x=soc_pct, line_color=AMBER, line_dash='dash', line_width=1.5,
-                           annotation_text=f'현재 {soc_pct:.0f}%',
+        vel_line.add_vline(x=v_mean, line_color=AMBER, line_dash='dash', line_width=1.5,
+                           annotation_text=f'현재 {v_mean:.0f} km/h',
                            annotation_font_color=AMBER, annotation_font_size=10)
-        soc_line.update_layout(
-            height=220, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        vel_line.update_layout(
+            height=280, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
             margin=dict(l=10, r=10, t=10, b=10),
             xaxis={'gridcolor': LINE, 'color': SUB,
-                   'title': {'text': 'SOC 소모 (%)', 'font': {'size': 11, 'color': SUB}}},
+                   'title': {'text': '평균 속도 (km/h)', 'font': {'size': 11, 'color': SUB}}},
             yaxis={'gridcolor': LINE, 'color': SUB,
                    'title': {'text': '예측 주행거리 (km)', 'font': {'size': 11, 'color': SUB}}},
             showlegend=False,
         )
-        st.plotly_chart(soc_line, use_container_width=True, config={'displayModeBar': False})
-
+        st.plotly_chart(vel_line, use_container_width=True, config={'displayModeBar': False})
         st.markdown(f"""
-        <div style="font-size:.8rem;color:{SUB};margin-bottom:8px">
-          나머지 슬라이더 조건을 고정한 채 <strong style="color:{TXT}">배터리 소모량(SOC)만 1~60%</strong>로
-          바꿀 때 AI가 예측하는 주행거리 변화입니다.
-          곡선이 가파를수록 SOC가 주행거리에 미치는 영향이 큽니다.
-        </div>
         <div class="insight">
-          현재 SOC 소모 <strong>{soc_pct:.0f}%</strong> →
-          예측 <strong style="color:{BMW_LIGHT}">{cur_pred_at_soc:.1f} km</strong>
-          &nbsp;|&nbsp; SOC 효율 <strong>{eff:.2f} km/%</strong>
-          (배터리 1% 소모당 {eff:.2f} km)
+          현재 평균 속도 <strong>{v_mean:.0f} km/h</strong> →
+          예측 <strong style="color:{BMW_LIGHT}">{cur_pred_at_vel:.1f} km</strong>
+          &nbsp;|&nbsp; 속도 10 km/h 변화 시 약 <strong>{abs(vel_slope)*10:.1f} km</strong> 차이
         </div>
+        """, unsafe_allow_html=True)
+
+    with col_b:
+        st.markdown('<div class="sec-head">배터리 출력 민감도 분석</div>', unsafe_allow_html=True)
+
+        bp_range = np.linspace(1, 30, 60)
+        preds_bp = []
+        for bv in bp_range:
+            r_tmp = dict(row); r_tmp['Battery_Power_mean'] = float(bv)
+            preds_bp.append(float(max(model.predict(pd.DataFrame([r_tmp])[cols])[0], 0)))
+
+        bp_slope = (preds_bp[-1] - preds_bp[0]) / (bp_range[-1] - bp_range[0])
+        cur_bp_idx = int(np.argmin(np.abs(bp_range - bp_mean)))
+        cur_pred_at_bp = preds_bp[cur_bp_idx]
+
+        bp_line = go.Figure()
+        bp_line.add_trace(go.Scatter(
+            x=bp_range, y=preds_bp, mode='lines',
+            line={'color': BMW_BLUE, 'width': 2.5},
+            fill='tozeroy', fillcolor='rgba(28,105,212,0.15)',
+            showlegend=False,
+        ))
+        bp_line.add_trace(go.Scatter(
+            x=[bp_mean], y=[cur_pred_at_bp], mode='markers',
+            marker={'color': AMBER, 'size': 10, 'symbol': 'circle',
+                    'line': {'color': TXT, 'width': 1.5}},
+            showlegend=False,
+        ))
+        bp_line.add_vline(x=bp_mean, line_color=AMBER, line_dash='dash', line_width=1.5,
+                          annotation_text=f'현재 {bp_mean:.1f} kW',
+                          annotation_font_color=AMBER, annotation_font_size=10)
+        bp_line.update_layout(
+            height=280, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+            margin=dict(l=10, r=10, t=10, b=10),
+            xaxis={'gridcolor': LINE, 'color': SUB,
+                   'title': {'text': '평균 배터리 출력 (kW)', 'font': {'size': 11, 'color': SUB}}},
+            yaxis={'gridcolor': LINE, 'color': SUB,
+                   'title': {'text': '예측 주행거리 (km)', 'font': {'size': 11, 'color': SUB}}},
+            showlegend=False,
+        )
+        st.plotly_chart(bp_line, use_container_width=True, config={'displayModeBar': False})
+        st.markdown(f"""
         <div class="insight">
-          AI 모델이 물리식(v×t)보다
-          <strong style="color:{arrow_col}">{arrow} {abs(diff_pct):.1f}%</strong>
-          {'높게' if diff_pct >= 0 else '낮게'} 예측 &nbsp;|&nbsp;
-          SOC 1% 변화 시 약 <strong>{abs(soc_slope):.1f} km</strong> 차이
+          현재 평균 배터리 출력 <strong>{bp_mean:.1f} kW</strong> →
+          예측 <strong style="color:{BMW_LIGHT}">{cur_pred_at_bp:.1f} km</strong>
+          &nbsp;|&nbsp; 출력 1 kW 변화 시 약 <strong>{abs(bp_slope):.1f} km</strong> 차이
         </div>
         """, unsafe_allow_html=True)
 
@@ -1388,8 +1398,6 @@ elif page == "변수 분석":
     fi_l, fi_r = st.columns([1.6, 1])
 
     FEAT_MEANINGS = {
-        'Duration':                          '주행 시간이 길수록 더 먼 거리를 이동합니다',
-        'SOC_Consumed':                      '배터리 소모가 클수록 더 오랜 주행을 반영합니다',
         'Battery_Temperature_std':           '배터리 온도 변동은 주행 강도를 나타냅니다',
         'Velocity_mean':                     '평균 속도가 높을수록 주행 효율에 영향을 줍니다',
         'Battery_Temperature_diff_max':      '배터리 온도 급변은 과부하 구간을 나타냅니다',
@@ -1407,7 +1415,6 @@ elif page == "변수 분석":
         'Velocity_max':                      '최고 속도가 높을수록 순간 전력 소모가 큽니다',
         'Battery_Voltage_mean':              '평균 전압이 낮으면 배터리 방전 수준을 의미합니다',
         'Accel_abs_max':                     '최대 가속도는 급가속 여부를 나타냅니다',
-        'Battery_State_of_Charge_End':       '종료 시 충전량이 높을수록 여유 주행이었습니다',
     }
 
     total_imp = importance['Importance'].sum()
