@@ -1092,17 +1092,31 @@ elif page == "주행거리 예측":
         st.markdown('<div class="sec-head">주행 조건 설정</div>', unsafe_allow_html=True)
         inputs = {}
 
-        EASY_FEATS = ['Velocity_mean', 'Throttle_lag1_mean', 'AirCon_Power_lag1_mean']
         ADV_FEATS  = ['Battery_Current_max', 'SoC_lag1_std', 'Throttle_lag1_std',
                       'Battery_Temperature_diff_mean', 'Elevation_MA3_std']
 
-        c1, c2 = st.columns(2)
-        for i, feat in enumerate([f for f in EASY_FEATS if f in cols]):
-            label, unit, lo, hi, step = META[feat]
-            default = float(np.clip(float(medians.get(feat, (lo + hi) / 2)), lo, hi))
-            tgt = c1 if i % 2 == 0 else c2
-            inputs[feat] = tgt.slider(f'{label} ({unit})', lo, hi, default, step,
-                                      key=f'pred_{feat}')
+        # 평균 속도 — 수치 슬라이더 (전체 너비)
+        if 'Velocity_mean' in cols:
+            _lo, _hi, _step = 0.0, 110.0, 1.0
+            _def_v = float(np.clip(float(medians.get('Velocity_mean', 50.0)), _lo, _hi))
+            inputs['Velocity_mean'] = st.slider('평균 속도 (km/h)', _lo, _hi, _def_v, _step,
+                                                key='pred_Velocity_mean')
+
+        # 가속 강도 — 단계 선택
+        _THR_OPTS = {'부드럽게 (10%)': 10.0, '보통 (25%)': 25.0,
+                     '활발하게 (45%)': 45.0, '강하게 (65%)': 65.0}
+        if 'Throttle_lag1_mean' in cols:
+            _thr_sel = st.select_slider('가속 강도', options=list(_THR_OPTS.keys()),
+                                        value='보통 (25%)', key='pred_Throttle_lag1_mean')
+            inputs['Throttle_lag1_mean'] = _THR_OPTS[_thr_sel]
+
+        # 에어컨 사용 — 단계 선택
+        _AC_OPTS = {'끔 (0 kW)': 0.0, '약하게 (1 kW)': 1.0,
+                    '보통 (2 kW)': 2.0, '강하게 (3.5 kW)': 3.5}
+        if 'AirCon_Power_lag1_mean' in cols:
+            _ac_sel = st.select_slider('에어컨 사용', options=list(_AC_OPTS.keys()),
+                                       value='보통 (2 kW)', key='pred_AirCon_Power_lag1_mean')
+            inputs['AirCon_Power_lag1_mean'] = _AC_OPTS[_ac_sel]
 
         with st.expander('고급 변수 (전문가용)'):
             a1, a2 = st.columns(2)
