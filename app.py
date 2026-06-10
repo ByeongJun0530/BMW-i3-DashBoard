@@ -1181,7 +1181,11 @@ elif page == "주행거리 예측":
         preds_vel = []
         for vv in vel_range:
             r_tmp = dict(row); r_tmp['Velocity_mean'] = float(vv)
-            preds_vel.append(float(max(model.predict(pd.DataFrame([r_tmp])[cols])[0], 0)))
+            _df_tmp = pd.DataFrame([r_tmp])[cols]
+            for _c in CAT_FEATURES:
+                if _c in _df_tmp.columns:
+                    _df_tmp[_c] = _df_tmp[_c].astype(int)
+            preds_vel.append(float(max(model.predict(_df_tmp)[0], 0)))
 
         vel_slope = (preds_vel[-1] - preds_vel[0]) / (vel_range[-1] - vel_range[0])
         cur_vel_idx = int(np.argmin(np.abs(vel_range - v_mean)))
@@ -1228,7 +1232,11 @@ elif page == "주행거리 예측":
         preds_bc = []
         for bv in bc_range:
             r_tmp = dict(row); r_tmp['Battery_Current_max'] = float(bv)
-            preds_bc.append(float(max(model.predict(pd.DataFrame([r_tmp])[cols])[0], 0)))
+            _df_tmp = pd.DataFrame([r_tmp])[cols]
+            for _c in CAT_FEATURES:
+                if _c in _df_tmp.columns:
+                    _df_tmp[_c] = _df_tmp[_c].astype(int)
+            preds_bc.append(float(max(model.predict(_df_tmp)[0], 0)))
 
         bc_slope = (preds_bc[-1] - preds_bc[0]) / (bc_range[-1] - bc_range[0])
         cur_bc_idx = int(np.argmin(np.abs(bc_range - bc_max_inp)))
@@ -1457,7 +1465,6 @@ elif page == "모델 분석":
             <div class="insight">튜닝 후 최저 RMSE — AB통합: <strong>{ab_best:.3f} km</strong> ·
             B만: <strong>{b_best:.3f} km</strong> (AB통합이 {b_best - ab_best:.3f} km 낮음)</div>
             """, unsafe_allow_html=True)
-        st.dataframe(df_opt.fillna('—'), use_container_width=True)
 
 
 # ════════════════════════════════════════════════════════════════
