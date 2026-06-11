@@ -444,6 +444,18 @@ st.markdown(f"""
    padding:10px 14px; margin:8px 0; font-size:.88rem; color:{SUB};
  }}
  .insight strong {{ color:{TXT}; }}
+
+ /* 경로·날씨 조건 체크박스 크게 */
+ .stCheckbox label,
+ .stCheckbox label p,
+ .stCheckbox label span {{
+   font-size: 1.15rem !important;
+   font-weight: 600 !important;
+   color: {TXT} !important;
+ }}
+ .stCheckbox [data-testid="stCheckboxLabel"] {{
+   font-size: 1.15rem !important;
+ }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1118,15 +1130,6 @@ elif page == "주행거리 예측":
                                        value='보통 (2 kW)', key='pred_AirCon_Power_lag1_mean')
             inputs['AirCon_Power_lag1_mean'] = _AC_OPTS[_ac_sel]
 
-        with st.expander('고급 변수 (전문가용)'):
-            a1, a2 = st.columns(2)
-            for i, feat in enumerate([f for f in ADV_FEATS if f in cols]):
-                label, unit, lo, hi, step = META[feat]
-                default = float(np.clip(float(medians.get(feat, (lo + hi) / 2)), lo, hi))
-                tgt = a1 if i % 2 == 0 else a2
-                inputs[feat] = tgt.slider(f'{label} ({unit})', lo, hi, default, step,
-                                          key=f'pred_{feat}')
-
         with st.expander('경로 · 날씨 조건'):
             _cc1, _cc2 = st.columns(2)
             _shown = ['Weather_rainy', 'Route_Area_Highway']
@@ -1140,6 +1143,15 @@ elif page == "주행거리 예측":
             for feat in CAT_FEATURES:
                 if feat not in _shown:
                     inputs[feat] = 0.0
+
+        with st.expander('고급 변수 (전문가용)'):
+            a1, a2 = st.columns(2)
+            for i, feat in enumerate([f for f in ADV_FEATS if f in cols]):
+                label, unit, lo, hi, step = META[feat]
+                default = float(np.clip(float(medians.get(feat, (lo + hi) / 2)), lo, hi))
+                tgt = a1 if i % 2 == 0 else a2
+                inputs[feat] = tgt.slider(f'{label} ({unit})', lo, hi, default, step,
+                                          key=f'pred_{feat}')
 
     row = {feat: inputs.get(feat, float(medians.get(feat, 0))) for feat in cols}
     X_one = pd.DataFrame([row])[cols]
